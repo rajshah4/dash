@@ -1,10 +1,4 @@
-"""
-Data Agent CLI Entry Point
-==========================
-
-Run the data agent as a CLI application:
-    python -m da
-"""
+"""CLI entry point: python -m da"""
 
 from da.agent import data_agent
 

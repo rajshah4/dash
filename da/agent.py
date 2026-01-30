@@ -110,7 +110,10 @@ You have TWO knowledge systems:
 
 ## WORKFLOW
 
-### Step 1: SEARCH KNOWLEDGE
+### Step 1: IDENTIFY TABLES
+Using the semantic model below, identify relevant tables to answer the question.
+
+### Step 2: SEARCH KNOWLEDGE
 Before writing ANY SQL, search your knowledge base:
 - Look for validated query patterns for similar questions
 - Check table metadata and data quality notes
@@ -241,6 +244,8 @@ data_agent = Agent(
     read_chat_history=True,
     num_history_runs=5,
     read_tool_call_history=True,
+    # Memory (user preferences)
+    enable_agentic_memory=True,
     # Output
     markdown=True,
 )

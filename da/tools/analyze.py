@@ -1,52 +1,8 @@
-"""
-Analyze Results Tool
-====================
-
-Provides insights from query results, not just raw data.
-
-This is a key differentiator from basic text-to-SQL: the agent should
-help users understand their data, not just return tables.
-
-Features:
-- Key findings summary
-- Basic statistics for numeric columns
-- Formatted results table
-- Suggested follow-up questions
-"""
+"""Analyze query results and provide insights."""
 
 from typing import Any
 
 from agno.tools import tool
-
-
-def _extract_numeric_values(results: list[dict[str, Any]], column: str) -> list[int | float]:
-    """Extract numeric values from a column across all result rows.
-
-    Args:
-        results: List of result dictionaries.
-        column: Column name to extract values from.
-
-    Returns:
-        List of numeric values (int or float), excluding None and non-numeric values.
-    """
-    values: list[int | float] = []
-    for row in results:
-        val = row.get(column)
-        if isinstance(val, (int, float)):
-            values.append(val)
-    return values
-
-
-def _get_numeric_columns(row: dict[str, Any]) -> list[str]:
-    """Get list of column names that contain numeric values.
-
-    Args:
-        row: A single result row dictionary.
-
-    Returns:
-        List of column names with numeric values.
-    """
-    return [key for key, value in row.items() if isinstance(value, (int, float))]
 
 
 @tool
@@ -58,224 +14,52 @@ def analyze_results(
 ) -> str:
     """Analyze query results and provide insights.
 
-    Call this tool after executing a SQL query to provide users with
-    meaningful insights rather than just raw data.
-
     Args:
-        results: The query results as a list of dictionaries (rows).
-        question: The original natural language question from the user.
-        sql_query: The SQL query that produced these results.
-        context: Optional additional context about the query or data.
+        results: Query results as list of dicts.
+        question: Original user question.
+        sql_query: SQL query that produced results.
+        context: Optional additional context.
 
     Returns:
-        str: A formatted analysis with key findings, statistics, and follow-up suggestions.
-
-    Example:
-        analyze_results(
-            results=[{"driver": "Hamilton", "wins": 11}, {"driver": "Bottas", "wins": 4}],
-            question="Who won the most races in 2019?",
-            sql_query="SELECT name, COUNT(*) AS wins FROM race_wins...",
-            context="This shows race wins, not championship points"
-        )
+        Formatted analysis with findings and suggestions.
     """
     if not results:
-        return _format_empty_results(question, sql_query)
+        return f"""## No Results Found
 
-    analysis_parts: list[str] = []
+The query returned no results. Possible causes:
+- No data matching criteria
+- Filter too restrictive
+- Column type mismatch (e.g., position might be TEXT not INTEGER)
 
-    # Header
-    analysis_parts.append("## Analysis")
-    analysis_parts.append("")
-
-    # Key findings
-    key_findings = _extract_key_findings(results, question)
-    analysis_parts.append("### Key Findings")
-    for finding in key_findings:
-        analysis_parts.append(f"- {finding}")
-    analysis_parts.append("")
-
-    # Statistics for numeric columns
-    stats = _compute_statistics(results)
-    if stats:
-        analysis_parts.append("### Statistics")
-        for col_name, col_stats in stats.items():
-            analysis_parts.append(f"**{col_name}:**")
-            for stat_name, stat_value in col_stats.items():
-                analysis_parts.append(f"  - {stat_name}: {stat_value}")
-        analysis_parts.append("")
-
-    # Results table (limited)
-    analysis_parts.append("### Results")
-    analysis_parts.append(_format_results_table(results, max_rows=10))
-    analysis_parts.append("")
-
-    # Context if provided
-    if context:
-        analysis_parts.append("### Context")
-        analysis_parts.append(context)
-        analysis_parts.append("")
-
-    # Follow-up suggestions
-    follow_ups = _suggest_follow_ups(results, question)
-    if follow_ups:
-        analysis_parts.append("### Suggested Follow-up Questions")
-        for follow_up in follow_ups:
-            analysis_parts.append(f"- {follow_up}")
-
-    return "\n".join(analysis_parts)
-
-
-def _format_empty_results(question: str, sql_query: str) -> str:
-    """Format response for empty results with actionable suggestions."""
-    return f"""## No Results Found
-
-The query returned no results. This could mean:
-
-1. **Data doesn't exist**: There may be no data matching your criteria
-2. **Filter too restrictive**: The WHERE conditions may be excluding all rows
-3. **Data quality issue**: Column types or formats may not match expectations
-
-### Suggestions
-
-- Check if the table contains any data for the time period/filters specified
-- Verify column types (e.g., position might be TEXT not INTEGER)
-- For dates, ensure proper parsing (e.g., TO_DATE for text date columns)
-- Try a broader query first to confirm data exists
-
-### Query Used
 ```sql
 {sql_query}
-```
+```"""
 
-Would you like me to investigate why no results were returned?"""
+    lines = ["## Analysis", ""]
 
+    # Key findings
+    lines.append(f"**Found {len(results)} result(s)**")
+    first = results[0]
 
-def _extract_key_findings(results: list[dict[str, Any]], question: str) -> list[str]:
-    """Extract key findings from results based on the question."""
-    findings: list[str] = []
+    # Highlight top result
+    name_cols = [k for k in first if k.lower() in ("name", "driver", "team", "venue")]
+    value_cols = [k for k in first if k.lower() in ("wins", "championships", "points", "count", "total")]
+    if name_cols and value_cols:
+        lines.append(f"Top: {first[name_cols[0]]} with {first[value_cols[0]]} {value_cols[0]}")
+    lines.append("")
 
-    if not results:
-        return ["No data found matching the criteria"]
+    # Results table (max 10 rows)
+    display = results[:10]
+    cols = list(display[0].keys())
+    lines.append("| " + " | ".join(cols) + " |")
+    lines.append("| " + " | ".join(["---"] * len(cols)) + " |")
+    for row in display:
+        lines.append("| " + " | ".join(str(row.get(c, ""))[:30] for c in cols) + " |")
 
-    # Total count
-    findings.append(f"Found {len(results)} result(s)")
+    if len(results) > 10:
+        lines.append(f"\n_Showing 10 of {len(results)} results_")
 
-    # If we have a small result set, highlight the top result
-    if len(results) > 0:
-        first = results[0]
-        # Find the most likely "name" and "value" columns
-        name_cols = [k for k in first.keys() if k.lower() in ("name", "driver", "team", "venue")]
-        value_cols = [
-            k for k in first.keys() if k.lower() in ("wins", "championships", "points", "count", "total", "podiums")
-        ]
+    if context:
+        lines.extend(["", f"**Context:** {context}"])
 
-        if name_cols and value_cols:
-            name_col = name_cols[0]
-            value_col = value_cols[0]
-            findings.append(f"Top result: {first[name_col]} with {first[value_col]} {value_col}")
-        elif name_cols:
-            name_col = name_cols[0]
-            findings.append(f"Top result: {first[name_col]}")
-
-    # If comparing (multiple results), note the range
-    if len(results) >= 2:
-        numeric_cols = _get_numeric_columns(results[0])
-        for col in numeric_cols[:1]:  # Just the first numeric column
-            values = _extract_numeric_values(results, col)
-            if values:
-                min_val = min(values)
-                max_val = max(values)
-                if min_val != max_val:
-                    findings.append(f"Range of {col}: {min_val} to {max_val}")
-
-    return findings
-
-
-def _compute_statistics(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Compute basic statistics for numeric columns."""
-    if not results:
-        return {}
-
-    stats: dict[str, dict[str, Any]] = {}
-    numeric_cols = _get_numeric_columns(results[0])
-
-    for col in numeric_cols:
-        values = _extract_numeric_values(results, col)
-        if not values:
-            continue
-
-        col_stats: dict[str, Any] = {
-            "min": min(values),
-            "max": max(values),
-            "count": len(values),
-        }
-
-        # Add average if we have enough values
-        if len(values) >= 2:
-            col_stats["average"] = round(sum(values) / len(values), 2)
-
-        # Add sum for countable things
-        if col.lower() in ("wins", "championships", "points", "count", "total", "podiums", "laps"):
-            col_stats["total"] = sum(values)
-
-        stats[col] = col_stats
-
-    return stats
-
-
-def _format_results_table(results: list[dict[str, Any]], max_rows: int = 10) -> str:
-    """Format results as a markdown table."""
-    if not results:
-        return "_No results_"
-
-    # Limit rows
-    display_results = results[:max_rows]
-    truncated = len(results) > max_rows
-
-    # Get column names
-    columns = list(display_results[0].keys())
-
-    # Build header
-    header = "| " + " | ".join(columns) + " |"
-    separator = "| " + " | ".join(["---"] * len(columns)) + " |"
-
-    # Build rows
-    rows: list[str] = []
-    for result in display_results:
-        values = [str(result.get(col, "")) for col in columns]
-        rows.append("| " + " | ".join(values) + " |")
-
-    table = "\n".join([header, separator] + rows)
-
-    if truncated:
-        table += f"\n\n_Showing {max_rows} of {len(results)} results_"
-
-    return table
-
-
-def _suggest_follow_ups(results: list[dict[str, Any]], question: str) -> list[str]:
-    """Suggest relevant follow-up questions based on results."""
-    suggestions: list[str] = []
-    question_lower = question.lower()
-
-    # Time-based follow-ups
-    if "year" in question_lower or "2019" in question_lower or "2020" in question_lower:
-        suggestions.append("How does this compare to previous years?")
-
-    # Driver-related follow-ups
-    if "driver" in question_lower or "who" in question_lower:
-        suggestions.append("Which team were they driving for?")
-        if "win" in question_lower:
-            suggestions.append("How many championships have they won?")
-
-    # Team-related follow-ups
-    if "team" in question_lower or "constructor" in question_lower:
-        suggestions.append("Which drivers contributed to this?")
-        suggestions.append("How has their performance changed over time?")
-
-    # Generic follow-ups
-    if len(results) > 1:
-        suggestions.append("Can you show this as a trend over time?")
-
-    # Limit suggestions
-    return suggestions[:3]
+    return "\n".join(lines)

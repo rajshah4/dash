@@ -1,19 +1,4 @@
-"""
-Learnings Tools
-===============
-
-Tools for searching and saving learnings - patterns discovered through
-interaction that help the agent improve over time.
-
-Learnings are DIFFERENT from Knowledge:
-- Knowledge: Static, curated facts (table schemas, validated queries, business rules)
-- Learnings: Dynamic, discovered patterns (query fixes, type gotchas, user corrections)
-
-Examples of learnings:
-- "When querying race_wins by year, use TO_DATE(date, 'DD Mon YYYY')"
-- "User prefers results sorted by date descending"
-- "Position column in drivers_championship is TEXT, not INTEGER"
-"""
+"""Tools for searching and saving learnings."""
 
 import json
 from datetime import datetime, timezone
@@ -25,60 +10,42 @@ from agno.utils.log import logger
 
 
 def create_learnings_tools(knowledge: Knowledge) -> tuple:
-    """Factory function that creates search_learnings and save_learning tools.
-
-    Args:
-        knowledge: The knowledge base to store learnings in.
-
-    Returns:
-        Tuple of (search_learnings, save_learning) tool functions.
-    """
+    """Create search_learnings and save_learning tools."""
 
     @tool
     def search_learnings(query: str, limit: int = 5) -> str:
         """Search for relevant learnings from past interactions.
 
-        ALWAYS call this BEFORE saving a new learning to check for duplicates.
-        Also call this when you encounter an error or unexpected result.
+        Call this BEFORE saving to check for duplicates.
 
         Args:
-            query: Keywords describing what you're looking for.
-                   Examples: "date parsing", "position column type", "race wins query"
-            limit: Maximum results (default: 5)
-
-        Returns:
-            List of relevant learnings, or message if none found.
+            query: Keywords to search for (e.g., "date parsing", "position type")
+            limit: Max results
         """
         try:
             results = knowledge.search(query=query, max_results=limit)
-
             if not results:
                 return "No relevant learnings found."
 
-            learnings: list[str] = []
-            for i, result in enumerate(results, 1):
-                content = result.content if hasattr(result, "content") else str(result)
+            learnings = []
+            for i, r in enumerate(results, 1):
+                content = r.content if hasattr(r, "content") else str(r)
                 try:
                     data = json.loads(content)
                     if data.get("type") == "learning":
-                        title = data.get("title", "Untitled")
-                        learning = data.get("learning", "")
-                        context = data.get("context", "")
-                        learnings.append(f"{i}. **{title}**\n   {learning}")
-                        if context:
-                            learnings.append(f"   _Context: {context}_")
+                        learnings.append(f"{i}. **{data.get('title', 'Untitled')}**\n   {data.get('learning', '')}")
                 except json.JSONDecodeError:
-                    # Raw text content
                     learnings.append(f"{i}. {content[:200]}")
 
-            if not learnings:
-                return "No relevant learnings found."
+            return (
+                f"Found {len(learnings)} learning(s):\n\n" + "\n".join(learnings)
+                if learnings
+                else "No learnings found."
+            )
 
-            return f"Found {len(learnings)} learning(s):\n\n" + "\n".join(learnings)
-
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             logger.error(f"search_learnings failed: {e}")
-            return f"Error searching learnings: {e}"
+            return f"Error: {e}"
 
     @tool
     def save_learning(
@@ -87,35 +54,20 @@ def create_learnings_tools(knowledge: Knowledge) -> tuple:
         context: str | None = None,
         tags: list[str] | None = None,
     ) -> str:
-        """Save a discovered pattern or insight for future reference.
+        """Save a discovered pattern for future reference.
 
-        IMPORTANT: Always call search_learnings FIRST to check for duplicates.
-
-        Call this when you discover:
-        - A query fix (e.g., "use TO_DATE for date parsing in race_wins")
-        - A type gotcha (e.g., "position is TEXT in drivers_championship")
-        - A pattern that worked (e.g., "always check column types before comparison")
-        - A user correction (e.g., "user clarified that X means Y")
-
-        Do NOT save:
-        - Raw facts (those go in knowledge)
-        - Common SQL syntax (everyone knows this)
-        - One-off answers that won't generalize
+        Call search_learnings FIRST to check for duplicates.
 
         Args:
-            title: Concise, searchable title (e.g., "Date parsing in race_wins table")
-            learning: The specific insight - actionable and clear
-            context: When/where this applies (e.g., "When filtering by year")
-            tags: Categories for organization (e.g., ["date", "race_wins", "parsing"])
-
-        Returns:
-            Confirmation message.
+            title: Searchable title (e.g., "Date parsing in race_wins")
+            learning: The actionable insight
+            context: When this applies
+            tags: Categories
         """
         if not title or not title.strip():
-            return "Error: Title is required."
-
+            return "Error: Title required."
         if not learning or not learning.strip():
-            return "Error: Learning content is required."
+            return "Error: Learning required."
 
         try:
             payload = {
@@ -126,8 +78,6 @@ def create_learnings_tools(knowledge: Knowledge) -> tuple:
                 "tags": tags or [],
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
-
-            # Remove None values
             payload = {k: v for k, v in payload.items() if v is not None}
 
             knowledge.add_content(
@@ -136,12 +86,10 @@ def create_learnings_tools(knowledge: Knowledge) -> tuple:
                 reader=TextReader(),
                 skip_if_exists=True,
             )
-
-            logger.info(f"Saved learning: {title}")
             return f"Learning saved: {title}"
 
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, OSError) as e:
             logger.error(f"save_learning failed: {e}")
-            return f"Error saving learning: {e}"
+            return f"Error: {e}"
 
     return search_learnings, save_learning
