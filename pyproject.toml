@@ -1,5 +1,5 @@
 [project]
-name = "data-agent"
+name = "dash"
 version = "1.0.0"
 description = "A self-learning data agent that provides insights, not just query results"
 requires-python = ">=3.12,<4"
@@ -8,26 +8,19 @@ license-files = ["LICENSE"]
 authors = [{ name = "Agno", email = "hello@agno.com" }]
 
 dependencies = [
-  # Agno Framework
-  "agno",
   "agno-infra",
-  # API
+  "agno",
   "fastapi[standard]",
-  # Models
+  "httpx",
+  "mcp",
   "openai",
-  # Database
+  "openinference-instrumentation-agno",
+  "opentelemetry-api",
+  "opentelemetry-sdk",
+  "pandas",
   "pgvector",
   "psycopg[binary]",
   "sqlalchemy",
-  # Tools
-  "mcp",
-  # Data loading
-  "pandas",
-  "httpx",
-  # Tracing
-  "opentelemetry-api",
-  "opentelemetry-sdk",
-  "openinference-instrumentation-agno",
 ]
 
 [project.optional-dependencies]

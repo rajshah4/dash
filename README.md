@@ -45,13 +45,13 @@ When a query fails, the agent introspects the schema, fixes the issue, and saves
 ## Quick Start
 
 ```sh
-git clone https://github.com/agno-agi/data-agent.git && cd data-agent
+git clone https://github.com/agno-agi/dash.git && cd dash
 cp example.env .env  # Add OPENAI_API_KEY
 
 # Start
 docker compose up -d --build
-docker exec -it data-agent-api python -m da.scripts.load_data
-docker exec -it data-agent-api python -m da.scripts.load_knowledge
+docker exec -it dash-api python -m dash.scripts.load_data
+docker exec -it dash-api python -m dash.scripts.load_knowledge
 ```
 
 | Endpoint | URL |
@@ -135,17 +135,17 @@ Map organizational language to data:
 ### Load It
 
 ```sh
-python -m da.scripts.load_knowledge            # Upsert changes
-python -m da.scripts.load_knowledge --recreate # Fresh start
+python -m dash.scripts.load_knowledge            # Upsert changes
+python -m dash.scripts.load_knowledge --recreate # Fresh start
 ```
 
 ## Local Development
 
 ```sh
 ./scripts/venv_setup.sh && source .venv/bin/activate
-docker compose up -d data-agent-db
-python -m da.scripts.load_data
-python -m da  # CLI mode
+docker compose up -d dash-db
+python -m dash.scripts.load_data
+python -m dash  # CLI mode
 ```
 
 ## Deploy

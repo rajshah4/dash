@@ -1,7 +1,7 @@
 services:
-  data-agent-db:
+  dash-db:
     image: agnohq/pgvector:18
-    container_name: data-agent-db
+    container_name: dash-db
     restart: unless-stopped
     ports:
       - "5432:5432"
@@ -12,26 +12,26 @@ services:
       POSTGRES_PASSWORD: ${DB_PASS:-ai}
       POSTGRES_DB: ${DB_DATABASE:-ai}
     networks:
-      - data-agent
+      - dash
 
-  data-agent-api:
-    container_name: data-agent-api
+  dash-api:
+    container_name: dash-api
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${IMAGE_NAME:-data-agent}:${IMAGE_TAG:-latest}
+    image: ${IMAGE_NAME:-dash}:${IMAGE_TAG:-latest}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
       - .:/app
-      - data-agent-data:/data
+      - dash-data:/data
     environment:
       DATA_DIR: /data
       RUNTIME_ENV: dev
       AGNO_DEBUG: "True"
-      DB_HOST: data-agent-db
+      DB_HOST: dash-db
       DB_PORT: 5432
       DB_USER: ${DB_USER:-ai}
       DB_PASS: ${DB_PASS:-ai}
@@ -41,15 +41,15 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       EXA_API_KEY: ${EXA_API_KEY:-}
     depends_on:
-      - data-agent-db
+      - dash-db
     networks:
-      - data-agent
+      - dash
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
 networks:
-  data-agent:
+  dash:
 
 volumes:
   pgdata:
-  data-agent-data:
+  dash-data:

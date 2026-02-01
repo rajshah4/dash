@@ -165,7 +165,7 @@ save_learning(
 # ============================================================================
 
 data_agent = Agent(
-    id="data-agent",
+    id="dash",
     name="Dash",
     model=OpenAIResponses(id="gpt-5.2"),
     db=agent_db,
