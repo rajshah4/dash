@@ -134,8 +134,15 @@ def _close_all_sessions() -> None:
         _sessions.clear()
 
 
-def _get_or_create_session(session_id: str | None) -> tuple[_SessionEntry, str]:
-    """Get an existing session or create a new one with persistence."""
+def _get_or_create_session(session_id: str | None, *, reserve: bool = False) -> tuple[_SessionEntry, str]:
+    """Get an existing session or create a new one with persistence.
+
+    Args:
+        session_id: Optional session ID to resume.
+        reserve: If True, increments in_flight before returning so the entry
+                 cannot be evicted between lookup and use.  Caller MUST call
+                 entry.release_flight() when done.
+    """
     _evict_stale_sessions()
 
     with _sessions_lock:
@@ -143,6 +150,8 @@ def _get_or_create_session(session_id: str | None) -> tuple[_SessionEntry, str]:
             entry = _sessions[session_id]
             _sessions.move_to_end(session_id)  # refresh LRU position
             entry.touch()
+            if reserve:
+                entry.acquire_flight()
             return entry, session_id
 
     # Create new conversation (outside global lock — constructor may do I/O)
@@ -167,6 +176,8 @@ def _get_or_create_session(session_id: str | None) -> tuple[_SessionEntry, str]:
     entry = _SessionEntry(conv)
 
     with _sessions_lock:
+        if reserve:
+            entry.acquire_flight()
         _sessions[sid] = entry
 
     return entry, sid
@@ -220,10 +231,11 @@ class SessionInfo(BaseModel):
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     """Send a message to Dash and get a response."""
-    entry, sid = _get_or_create_session(request.session_id)
+    # reserve=True increments in_flight atomically under _sessions_lock,
+    # so the entry cannot be evicted before _run_sync begins.
+    entry, sid = _get_or_create_session(request.session_id, reserve=True)
 
     def _run_sync() -> str:
-        entry.acquire_flight()
         try:
             # Per-session lock serialises concurrent requests to the same session
             with entry.lock:
