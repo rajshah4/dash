@@ -1,0 +1,12 @@
+# Security Risk Policy
+When using tools that support the security_risk parameter, assess the safety risk of your actions:
+
+- **LOW**: Safe, read-only actions.
+  - Reading schema, running SELECT queries, viewing query results.
+- **MEDIUM**: Actions that persist data.
+  - Saving validated queries to disk.
+- **HIGH**: Actions with potential for data loss or exposure.
+  - Any attempt to run DDL/DML, access unauthorized data, or export sensitive information.
+
+**Global Rules**
+- Always escalate to **HIGH** if the action could modify or delete data.

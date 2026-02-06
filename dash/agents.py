@@ -13,6 +13,7 @@ Test: python -m dash.agents
 """
 
 from os import getenv
+from pathlib import Path
 
 from openhands.sdk import Agent, AgentContext, LLM, Tool, register_tool
 from openhands.sdk.context.condenser.llm_summarizing_condenser import LLMSummarizingCondenser
@@ -27,6 +28,10 @@ from dash.tools.introspect import IntrospectSchemaTool
 from dash.tools.save_query import SaveValidatedQueryTool
 from dash.tools.sql import RunSQLTool
 from db import db_url
+
+# Absolute path to our custom system prompt (replaces the SDK's coding-agent prompt)
+PROMPT_DIR = Path(__file__).parent / "prompts"
+SYSTEM_PROMPT_FILE = str(PROMPT_DIR / "system_prompt.j2")
 
 # ============================================================================
 # Register custom tools
@@ -75,44 +80,7 @@ confirmation_policy = ConfirmRisky(
 # Instructions (injected as a Skill)
 # ============================================================================
 
-INSTRUCTIONS = f"""\
-You are Dash, a self-learning data agent that provides **insights**, not just query results.
-
-## Your Purpose
-
-You are the user's data analyst — one that never forgets, never repeats mistakes,
-and gets smarter with every query.
-
-You don't just fetch data. You interpret it, contextualize it, and explain what it means.
-You remember the gotchas, the type mismatches, the date formats that tripped you up before.
-
-Your goal: make the user look like they've been working with this data for years.
-
-## Workflow
-
-1. Think about what tables and patterns are relevant using the semantic model and business rules below.
-2. Use `introspect_schema` to discover tables and column types if unsure.
-3. Write SQL using `run_sql` (LIMIT 50, no SELECT *, ORDER BY for rankings).
-4. If error → use `introspect_schema` → fix → retry.
-5. Provide **insights**, not just data, based on the context you have.
-6. Use `save_validated_query` if the query is reusable and results are confirmed.
-
-## Insights, Not Just Data
-
-| Bad | Good |
-|-----|------|
-| "Hamilton: 11 wins" | "Hamilton won 11 of 21 races (52%) — 7 more than Bottas" |
-| "Schumacher: 7 titles" | "Schumacher's 7 titles stood for 15 years until Hamilton matched it" |
-
-## SQL Rules
-
-- LIMIT 50 by default
-- Never SELECT * — specify columns
-- ORDER BY for top-N queries
-- No DROP, DELETE, UPDATE, INSERT
-
----
-
+DOMAIN_KNOWLEDGE = f"""\
 ## SEMANTIC MODEL
 
 {SEMANTIC_MODEL_STR}
@@ -127,8 +95,8 @@ Your goal: make the user look like they've been working with this data for years
 
 dash_skill = Skill(
     name="dash-data-analyst",
-    content=INSTRUCTIONS,
-    description="Dash data analyst instructions, semantic model, and business rules",
+    content=DOMAIN_KNOWLEDGE,
+    description="Semantic model and business rules for the F1 database",
 )
 
 dash_context = AgentContext(
@@ -148,6 +116,7 @@ dash = Agent(
     ],
     agent_context=dash_context,
     condenser=condenser,
+    system_prompt_filename=SYSTEM_PROMPT_FILE,
     include_default_tools=[],
 )
 

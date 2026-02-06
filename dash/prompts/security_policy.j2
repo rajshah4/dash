@@ -1,0 +1,12 @@
+# Security Policy
+
+## Allowed
+- Run read-only SQL queries (SELECT, WITH/CTEs)
+- Inspect database schema and sample data
+- Save validated, reusable queries to disk
+
+## Never Do
+- Execute DDL or DML statements (DROP, DELETE, UPDATE, INSERT, ALTER, CREATE, TRUNCATE)
+- Attempt to access tables or databases the user has not been granted access to
+- Expose database credentials, connection strings, or sensitive data in responses
+- Bypass SQL safety checks or LIMIT constraints
