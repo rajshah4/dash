@@ -1,74 +1,152 @@
-"""Save validated SQL queries to knowledge base."""
+"""Save validated SQL queries tool."""
+
+from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from agno.knowledge import Knowledge
-from agno.knowledge.reader.text_reader import TextReader
-from agno.tools import tool
-from agno.utils.log import logger
+from pydantic import Field
+
+from openhands.sdk.tool.schema import Action, Observation
+from openhands.sdk.tool.tool import ToolAnnotations, ToolDefinition, ToolExecutor
 
 
-def create_save_validated_query_tool(knowledge: Knowledge):
-    """Create save_validated_query tool with knowledge injected."""
+if TYPE_CHECKING:
+    from openhands.sdk.conversation import LocalConversation
+    from openhands.sdk.conversation.state import ConversationState
 
-    @tool
-    def save_validated_query(
-        name: str,
-        question: str,
-        query: str,
-        summary: str | None = None,
-        tables_used: list[str] | None = None,
-        data_quality_notes: str | None = None,
-    ) -> str:
-        """Save a validated SQL query to knowledge base.
+logger = logging.getLogger(__name__)
 
-        Call ONLY after query executed successfully and user confirmed results.
 
-        Args:
-            name: Short name (e.g., "championship_wins_by_driver")
-            question: Original user question
-            query: The SQL query
-            summary: What the query does
-            tables_used: Tables used
-            data_quality_notes: Data quality issues handled
-        """
-        if not name or not name.strip():
-            return "Error: Name required."
-        if not question or not question.strip():
-            return "Error: Question required."
-        if not query or not query.strip():
-            return "Error: Query required."
+# ============================================================================
+# Action / Observation schemas
+# ============================================================================
 
-        sql = query.strip().lower()
+
+class SaveValidatedQueryAction(Action):
+    """Save a validated SQL query for future reference."""
+
+    name: str = Field(description='Short name for the query (e.g., "championship_wins_by_driver")')
+    question: str = Field(description="The original user question this query answers")
+    query: str = Field(description="The validated SQL query")
+    summary: str | None = Field(default=None, description="Brief description of what the query does")
+    tables_used: list[str] | None = Field(default=None, description="List of tables used in the query")
+    data_quality_notes: str | None = Field(default=None, description="Any data quality issues handled")
+
+
+class SaveValidatedQueryObservation(Observation):
+    """Result of saving a validated query."""
+
+    pass
+
+
+# ============================================================================
+# Executor
+# ============================================================================
+
+DANGEROUS_KEYWORDS = ["drop", "delete", "truncate", "insert", "update", "alter", "create"]
+
+
+class SaveValidatedQueryExecutor(ToolExecutor[SaveValidatedQueryAction, SaveValidatedQueryObservation]):
+    """Save validated queries to a local JSON file."""
+
+    def __init__(self, queries_dir: Path) -> None:
+        self.queries_dir = queries_dir
+        self.queries_dir.mkdir(parents=True, exist_ok=True)
+
+    def __call__(
+        self,
+        action: SaveValidatedQueryAction,
+        conversation: "LocalConversation | None" = None,
+    ) -> SaveValidatedQueryObservation:
+        if not action.name or not action.name.strip():
+            return SaveValidatedQueryObservation.from_text("Error: Name required.", is_error=True)
+        if not action.question or not action.question.strip():
+            return SaveValidatedQueryObservation.from_text("Error: Question required.", is_error=True)
+        if not action.query or not action.query.strip():
+            return SaveValidatedQueryObservation.from_text("Error: Query required.", is_error=True)
+
+        sql = action.query.strip().lower()
         if not sql.startswith("select") and not sql.startswith("with"):
-            return "Error: Only SELECT queries can be saved."
+            return SaveValidatedQueryObservation.from_text("Error: Only SELECT queries can be saved.", is_error=True)
 
-        dangerous = ["drop", "delete", "truncate", "insert", "update", "alter", "create"]
-        for kw in dangerous:
+        for kw in DANGEROUS_KEYWORDS:
             if f" {kw} " in f" {sql} ":
-                return f"Error: Query contains dangerous keyword: {kw}"
+                return SaveValidatedQueryObservation.from_text(
+                    f"Error: Query contains dangerous keyword: {kw}", is_error=True
+                )
 
-        payload = {
+        payload: dict[str, Any] = {
             "type": "validated_query",
-            "name": name.strip(),
-            "question": question.strip(),
-            "query": query.strip(),
-            "summary": summary.strip() if summary else None,
-            "tables_used": tables_used or [],
-            "data_quality_notes": data_quality_notes.strip() if data_quality_notes else None,
+            "name": action.name.strip(),
+            "question": action.question.strip(),
+            "query": action.query.strip(),
         }
-        payload = {k: v for k, v in payload.items() if v is not None}
+        if action.summary:
+            payload["summary"] = action.summary.strip()
+        if action.tables_used:
+            payload["tables_used"] = action.tables_used
+        if action.data_quality_notes:
+            payload["data_quality_notes"] = action.data_quality_notes.strip()
 
         try:
-            knowledge.insert(
-                name=name.strip(),
-                text_content=json.dumps(payload, ensure_ascii=False, indent=2),
-                reader=TextReader(),
-                skip_if_exists=True,
-            )
-            return f"Saved query '{name}' to knowledge base."
-        except (AttributeError, TypeError, ValueError, OSError) as e:
+            filename = action.name.strip().replace(" ", "_").lower() + ".json"
+            filepath = self.queries_dir / filename
+            if filepath.exists():
+                return SaveValidatedQueryObservation.from_text(
+                    f"Query '{action.name}' already exists. Skipped."
+                )
+            with open(filepath, "w") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            return SaveValidatedQueryObservation.from_text(f"Saved query '{action.name}' to {filepath}.")
+        except OSError as e:
             logger.error(f"Failed to save query: {e}")
-            return f"Error: {e}"
+            return SaveValidatedQueryObservation.from_text(f"Error: {e}", is_error=True)
 
-    return save_validated_query
+    def close(self) -> None:
+        pass
+
+
+# ============================================================================
+# Tool Definition
+# ============================================================================
+
+
+TOOL_DESCRIPTION = """\
+Save a validated SQL query to the knowledge base for future reuse.
+
+Call ONLY after the query has executed successfully and the user confirmed results are correct.
+Saved queries will be available in the knowledge directory for future reference.
+"""
+
+
+class SaveValidatedQueryTool(ToolDefinition[SaveValidatedQueryAction, SaveValidatedQueryObservation]):
+    """Save validated queries to knowledge base."""
+
+    @classmethod
+    def create(
+        cls,
+        conv_state: "ConversationState | None" = None,
+        queries_dir: str = "",
+        **kwargs: Any,
+    ) -> Sequence["SaveValidatedQueryTool"]:
+        if not queries_dir:
+            raise ValueError("queries_dir is required for SaveValidatedQueryTool")
+        return [
+            cls(
+                description=TOOL_DESCRIPTION,
+                action_type=SaveValidatedQueryAction,
+                observation_type=SaveValidatedQueryObservation,
+                annotations=ToolAnnotations(
+                    title="save_validated_query",
+                    readOnlyHint=False,
+                    destructiveHint=False,
+                    idempotentHint=True,
+                    openWorldHint=False,
+                ),
+                executor=SaveValidatedQueryExecutor(Path(queries_dir)),
+            )
+        ]

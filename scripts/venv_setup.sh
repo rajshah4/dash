@@ -2,7 +2,7 @@
 
 ############################################################################
 #
-#    Agno Virtual Environment Setup
+#    Dash Virtual Environment Setup
 #
 #    Usage: ./scripts/venv_setup.sh
 #
@@ -15,23 +15,13 @@ REPO_ROOT="$(dirname "${CURR_DIR}")"
 VENV_DIR="${REPO_ROOT}/.venv"
 
 # Colors
-ORANGE='\033[38;5;208m'
+CYAN='\033[36m'
 DIM='\033[2m'
 BOLD='\033[1m'
 NC='\033[0m'
 
 echo ""
-echo -e "${ORANGE}"
-cat << 'BANNER'
-     █████╗  ██████╗ ███╗   ██╗ ██████╗
-    ██╔══██╗██╔════╝ ████╗  ██║██╔═══██╗
-    ███████║██║  ███╗██╔██╗ ██║██║   ██║
-    ██╔══██║██║   ██║██║╚██╗██║██║   ██║
-    ██║  ██║╚██████╔╝██║ ╚████║╚██████╔╝
-    ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝
-BANNER
-echo -e "${NC}"
-echo -e "    ${DIM}Virtual Environment Setup${NC}"
+echo -e "    ${CYAN}${BOLD}🏎️  Dash${NC} — Virtual Environment Setup"
 echo ""
 
 # Preflight
@@ -56,12 +46,7 @@ echo -e "    ${DIM}> uv venv ${VENV_DIR} --python 3.12${NC}"
 uv venv ${VENV_DIR} --python 3.12 --quiet
 
 echo ""
-echo -e "    ${DIM}Installing requirements...${NC}"
-echo -e "    ${DIM}> uv pip install -r requirements.txt --no-cache${NC}"
-VIRTUAL_ENV=${VENV_DIR} uv pip install -r ${REPO_ROOT}/requirements.txt --no-cache --quiet
-
-echo ""
-echo -e "    ${DIM}Installing project in editable mode with dev dependencies...${NC}"
+echo -e "    ${DIM}Installing project with dependencies...${NC}"
 echo -e "    ${DIM}> uv pip install -e .[dev]${NC}"
 VIRTUAL_ENV=${VENV_DIR} uv pip install -e ${REPO_ROOT}[dev] --quiet
 

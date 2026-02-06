@@ -1,12 +1,13 @@
 """Load business definitions, metrics, and common gotchas."""
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
-from agno.utils.log import logger
-
 from dash.paths import BUSINESS_DIR
+
+logger = logging.getLogger(__name__)
 
 
 def load_business_rules(business_dir: Path | None = None) -> dict[str, list[Any]]:

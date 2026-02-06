@@ -2,78 +2,77 @@
 Dash Agents
 ===========
 
+Defines the Dash data agent using the OpenHands SDK.
+
+Features:
+- Custom SQL tools (run_sql, introspect_schema, save_validated_query)
+- LLM-summarizing condenser for long conversations
+- Security confirmation policy for risky actions
+
 Test: python -m dash.agents
 """
 
 from os import getenv
 
-from agno.agent import Agent
-from agno.knowledge import Knowledge
-from agno.knowledge.embedder.openai import OpenAIEmbedder
-from agno.learn import (
-    LearnedKnowledgeConfig,
-    LearningMachine,
-    LearningMode,
-    UserMemoryConfig,
-    UserProfileConfig,
-)
-from agno.models.openai import OpenAIResponses
-from agno.tools.mcp import MCPTools
-from agno.tools.reasoning import ReasoningTools
-from agno.tools.sql import SQLTools
-from agno.vectordb.pgvector import PgVector, SearchType
+from openhands.sdk import Agent, AgentContext, LLM, Tool, register_tool
+from openhands.sdk.context.condenser.llm_summarizing_condenser import LLMSummarizingCondenser
+from openhands.sdk.context.skills.skill import Skill
+from openhands.sdk.security.confirmation_policy import ConfirmRisky
+from openhands.sdk.security.risk import SecurityRisk
 
 from dash.context.business_rules import BUSINESS_CONTEXT
 from dash.context.semantic_model import SEMANTIC_MODEL_STR
-from dash.tools import create_introspect_schema_tool, create_save_validated_query_tool
-from db import db_url, get_postgres_db
+from dash.paths import QUERIES_DIR
+from dash.tools.introspect import IntrospectSchemaTool
+from dash.tools.save_query import SaveValidatedQueryTool
+from dash.tools.sql import RunSQLTool
+from db import db_url
 
 # ============================================================================
-# Database & Knowledge
+# Register custom tools
 # ============================================================================
 
-agent_db = get_postgres_db()
+register_tool(RunSQLTool.name, RunSQLTool)
+register_tool(IntrospectSchemaTool.name, IntrospectSchemaTool)
+register_tool(SaveValidatedQueryTool.name, SaveValidatedQueryTool)
 
-# KNOWLEDGE: Static, curated (table schemas, validated queries, business rules)
-dash_knowledge = Knowledge(
-    name="Dash Knowledge",
-    vector_db=PgVector(
-        db_url=db_url,
-        table_name="dash_knowledge",
-        search_type=SearchType.hybrid,
-        embedder=OpenAIEmbedder(id="text-embedding-3-small"),
-    ),
-    contents_db=get_postgres_db(contents_table="dash_knowledge_contents"),
-)
+# ============================================================================
+# LLM Configuration
+# ============================================================================
 
-# LEARNINGS: Dynamic, discovered (error patterns, gotchas, user corrections)
-dash_learnings = Knowledge(
-    name="Dash Learnings",
-    vector_db=PgVector(
-        db_url=db_url,
-        table_name="dash_learnings",
-        search_type=SearchType.hybrid,
-        embedder=OpenAIEmbedder(id="text-embedding-3-small"),
-    ),
-    contents_db=get_postgres_db(contents_table="dash_learnings_contents"),
+llm = LLM(
+    model=getenv("LLM_MODEL", "openai/gpt-4.1"),
+    api_key=getenv("LLM_API_KEY") or getenv("OPENAI_API_KEY"),
+    base_url=getenv("LLM_BASE_URL"),
 )
 
 # ============================================================================
-# Tools
+# Condenser — summarize context when conversations get long
 # ============================================================================
+# When the conversation exceeds max_size messages, older messages are
+# summarized by the LLM to keep context within token limits while
+# preserving key facts the agent discovered (schema quirks, column types, etc.)
 
-save_validated_query = create_save_validated_query_tool(dash_knowledge)
-introspect_schema = create_introspect_schema_tool(db_url)
-
-base_tools: list = [
-    SQLTools(db_url=db_url),
-    save_validated_query,
-    introspect_schema,
-    MCPTools(url=f"https://mcp.exa.ai/mcp?exaApiKey={getenv('EXA_API_KEY', '')}&tools=web_search_exa"),
-]
+condenser = LLMSummarizingCondenser(
+    llm=llm,
+    max_size=100,   # Summarize after 100 events
+    keep_first=2,   # Always keep the system prompt + first user message
+)
 
 # ============================================================================
-# Instructions
+# Security — confirmation policy for risky actions
+# ============================================================================
+# ConfirmRisky pauses and asks for user confirmation when the LLM
+# predicts an action has HIGH or UNKNOWN risk. Since Dash only runs
+# read-only SQL, this is mostly a safety net for the save_validated_query tool.
+
+confirmation_policy = ConfirmRisky(
+    threshold=SecurityRisk.HIGH,
+    confirm_unknown=True,
+)
+
+# ============================================================================
+# Instructions (injected as a Skill)
 # ============================================================================
 
 INSTRUCTIONS = f"""\
@@ -89,51 +88,14 @@ You remember the gotchas, the type mismatches, the date formats that tripped you
 
 Your goal: make the user look like they've been working with this data for years.
 
-## Two Knowledge Systems
-
-**Knowledge** (static, curated):
-- Table schemas, validated queries, business rules
-- Searched automatically before each response
-- Add successful queries here with `save_validated_query`
-
-**Learnings** (dynamic, discovered):
-- Patterns YOU discover through errors and fixes
-- Type gotchas, date formats, column quirks
-- Search with `search_learnings`, save with `save_learning`
-
 ## Workflow
 
-1. Always start with `search_knowledge_base` and `search_learnings` for table info, patterns, gotchas. Context that will help you write the best possible SQL.
-2. Write SQL (LIMIT 50, no SELECT *, ORDER BY for rankings)
-3. If error → `introspect_schema` → fix → `save_learning`
-4. Provide **insights**, not just data, based on the context you found.
-5. Offer `save_validated_query` if the query is reusable.
-
-## When to save_learning
-
-After fixing a type error:
-```
-save_learning(
-  title="drivers_championship position is TEXT",
-  learning="Use position = '1' not position = 1"
-)
-```
-
-After discovering a date format:
-```
-save_learning(
-  title="race_wins date parsing",
-  learning="Use TO_DATE(date, 'DD Mon YYYY') to extract year"
-)
-```
-
-After a user corrects you:
-```
-save_learning(
-  title="Constructors Championship started 1958",
-  learning="No constructors data before 1958"
-)
-```
+1. Think about what tables and patterns are relevant using the semantic model and business rules below.
+2. Use `introspect_schema` to discover tables and column types if unsure.
+3. Write SQL using `run_sql` (LIMIT 50, no SELECT *, ORDER BY for rankings).
+4. If error → use `introspect_schema` → fix → retry.
+5. Provide **insights**, not just data, based on the context you have.
+6. Use `save_validated_query` if the query is reusable and results are confirmed.
 
 ## Insights, Not Just Data
 
@@ -160,40 +122,40 @@ save_learning(
 """
 
 # ============================================================================
+# Agent Context (provides the Dash skill/instructions)
+# ============================================================================
+
+dash_skill = Skill(
+    name="dash-data-analyst",
+    content=INSTRUCTIONS,
+    description="Dash data analyst instructions, semantic model, and business rules",
+)
+
+dash_context = AgentContext(
+    skills=[dash_skill],
+)
+
+# ============================================================================
 # Create Agent
 # ============================================================================
 
 dash = Agent(
-    name="Dash",
-    model=OpenAIResponses(id="gpt-5.2"),
-    db=agent_db,
-    instructions=INSTRUCTIONS,
-    # Knowledge (static)
-    knowledge=dash_knowledge,
-    search_knowledge=True,
-    # Learning (provides search_learnings, save_learning, user profile, user memory)
-    learning=LearningMachine(
-        knowledge=dash_learnings,
-        user_profile=UserProfileConfig(mode=LearningMode.AGENTIC),
-        user_memory=UserMemoryConfig(mode=LearningMode.AGENTIC),
-        learned_knowledge=LearnedKnowledgeConfig(mode=LearningMode.AGENTIC),
-    ),
-    tools=base_tools,
-    # Context
-    add_datetime_to_context=True,
-    add_history_to_context=True,
-    read_chat_history=True,
-    num_history_runs=5,
-    markdown=True,
-)
-
-# Reasoning variant - adds multi-step reasoning capabilities
-reasoning_dash = dash.deep_copy(
-    update={
-        "name": "Reasoning Dash",
-        "tools": base_tools + [ReasoningTools(add_instructions=True)],
-    }
+    llm=llm,
+    tools=[
+        Tool(name=RunSQLTool.name, params={"db_url": db_url}),
+        Tool(name=IntrospectSchemaTool.name, params={"db_url": db_url}),
+        Tool(name=SaveValidatedQueryTool.name, params={"queries_dir": str(QUERIES_DIR)}),
+    ],
+    agent_context=dash_context,
+    condenser=condenser,
+    include_default_tools=[],
 )
 
 if __name__ == "__main__":
-    dash.print_response("Who won the most races in 2019?", stream=True)
+    from openhands.sdk import Conversation
+
+    conversation = Conversation(agent=dash, workspace=".")
+    conversation.set_confirmation_policy(confirmation_policy)
+    conversation.send_message("Who won the most races in 2019?")
+    conversation.run()
+    print("Done!")

@@ -2,25 +2,19 @@
 Database Session
 ================
 
-PostgreSQL database connection for AgentOS.
+PostgreSQL database connection utilities.
 """
 
-from agno.db.postgres import PostgresDb
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 
 from db.url import db_url
 
-DB_ID = "dash-db"
 
-
-def get_postgres_db(contents_table: str | None = None) -> PostgresDb:
-    """Create a PostgresDb instance.
-
-    Args:
-        contents_table: Optional table name for storing knowledge contents.
+def get_engine() -> Engine:
+    """Create a SQLAlchemy engine.
 
     Returns:
-        Configured PostgresDb instance.
+        Configured SQLAlchemy Engine instance.
     """
-    if contents_table is not None:
-        return PostgresDb(id=DB_ID, db_url=db_url, knowledge_table=contents_table)
-    return PostgresDb(id=DB_ID, db_url=db_url)
+    return create_engine(db_url)

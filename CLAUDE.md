@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-Dash is a self-learning data agent that delivers **insights, not just SQL results**. It grounds SQL generation in 6 layers of context and improves automatically with every query. Inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-in-house-data-agent/).
+Dash is a self-learning data agent that delivers **insights, not just SQL results**. Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk), it uses custom tools for SQL execution and schema introspection, grounded in 6 layers of context. Inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-in-house-data-agent/).
 
 ## Structure
 
 ```
 dash/
-├── agents.py             # Dash agents (dash, reasoning_dash)
+├── agents.py             # Dash agent (LLM, tools, condenser, security)
 ├── paths.py              # Path constants
 ├── knowledge/            # Knowledge files (tables, queries, business rules)
 │   ├── tables/           # Table metadata JSON files
@@ -18,79 +18,89 @@ dash/
 │   ├── semantic_model.py # Layer 1: Table usage
 │   └── business_rules.py # Layer 2: Business rules
 ├── tools/
-│   ├── introspect.py     # Layer 6: Runtime context
-│   └── save_query.py     # Save validated queries
+│   ├── sql.py            # RunSQLTool (custom OpenHands tool)
+│   ├── introspect.py     # IntrospectSchemaTool (custom OpenHands tool)
+│   └── save_query.py     # SaveValidatedQueryTool (custom OpenHands tool)
 ├── scripts/
 │   ├── load_data.py      # Load F1 sample data
-│   └── load_knowledge.py # Load knowledge files
+│   └── load_knowledge.py # Validate knowledge files
 └── evals/
     ├── test_cases.py     # Test cases with golden SQL
     ├── grader.py         # LLM-based response grader
     └── run_evals.py      # Run evaluations
 
 app/
-├── main.py               # API entry point (AgentOS)
-└── config.yaml           # Agent configuration
+├── main.py               # API entry point (FastAPI) with persistence
+└── config.yaml           # Configuration
 
 db/
-├── session.py            # PostgreSQL session factory
+├── session.py            # SQLAlchemy engine factory
 └── url.py                # Database URL builder
 ```
 
 ## Commands
 
 ```bash
-./scripts/venv_setup.sh && source .venv/bin/activate
-./scripts/format.sh      # Format code
-./scripts/validate.sh    # Lint + type check
-python -m dash           # CLI mode
-python -m dash.agents    # Test mode (runs sample query)
+# Setup
+uv sync
+source .venv/bin/activate
+
+# Run
+python -m dash                                  # Interactive CLI (persistent sessions)
+python -m dash "Who won in 2019?"               # One-shot query
+python -m dash --session <uuid>                 # Resume a previous session
+python -m dash --no-persist                     # Disable persistence
+python -m dash --confirm                        # Enable confirmation for risky actions
+python -m dash.agents                           # Test mode (runs sample query)
+python -m app.main                              # API server
 
 # Data & Knowledge
-python -m dash.scripts.load_data       # Load F1 sample data
-python -m dash.scripts.load_knowledge  # Load knowledge into vector DB
+python -m dash.scripts.load_data                # Load F1 sample data
+python -m dash.scripts.load_knowledge           # Validate knowledge files
 
 # Evaluations
-python -m dash.evals.run_evals              # Run all evals (string matching)
-python -m dash.evals.run_evals -c basic     # Run specific category
-python -m dash.evals.run_evals -v           # Verbose mode (show responses)
-python -m dash.evals.run_evals -g           # Use LLM grader
-python -m dash.evals.run_evals -r           # Compare against golden SQL results
-python -m dash.evals.run_evals -g -r -v     # All modes combined
+python -m dash.evals.run_evals                  # Run all evals (string matching)
+python -m dash.evals.run_evals -c basic         # Run specific category
+python -m dash.evals.run_evals -v               # Verbose mode (show responses)
+python -m dash.evals.run_evals -g               # Use LLM grader
+python -m dash.evals.run_evals -r               # Compare against golden SQL results
+python -m dash.evals.run_evals -g -r -v         # All modes combined
 ```
 
 ## Architecture
 
-**Two Learning Systems:**
+Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk):
 
-| System | What It Stores | How It Evolves |
-|--------|---------------|----------------|
-| **Knowledge** | Validated queries, table metadata, business rules | Curated by you + Dash |
-| **Learnings** | Error patterns, type gotchas, discovered fixes | Managed by Learning Machine automatically |
+| Component | OpenHands SDK Class | Role |
+|-----------|-------------------|------|
+| Agent | `Agent` | Reasoning loop with LLM + tools |
+| LLM | `LLM` | Model integration (any LiteLLM provider) |
+| Tools | `ToolDefinition` | Custom SQL, introspect, save tools |
+| Context | `AgentContext` + `Skill` | Instructions & knowledge injection |
+| Condenser | `LLMSummarizingCondenser` | Compress long conversations |
+| Security | `ConfirmRisky` | Confirmation for risky actions |
+| Persistence | `persistence_dir` | Save/resume conversations to disk |
+| Conversation | `Conversation` | State & lifecycle management |
 
-```python
-# KNOWLEDGE: Static, curated (table schemas, validated queries)
-dash_knowledge = Knowledge(...)
+### Custom Tools (registered via `register_tool`)
 
-# LEARNINGS: Dynamic, discovered (error patterns, gotchas)
-dash_learnings = Knowledge(...)
+| Tool | Class | Purpose |
+|------|-------|---------|
+| `run_sql` | `RunSQLTool` | Execute read-only SQL queries |
+| `introspect_schema` | `IntrospectSchemaTool` | Discover tables, columns, types |
+| `save_validated_query` | `SaveValidatedQueryTool` | Save reusable queries to files |
 
-dash = Agent(
-    knowledge=dash_knowledge,
-    search_knowledge=True,
-    learning=LearningMachine(
-        knowledge=dash_learnings,  # separate from static knowledge
-        user_profile=UserProfileConfig(mode=LearningMode.AGENTIC),
-        user_memory=UserMemoryConfig(mode=LearningMode.AGENTIC),
-        learned_knowledge=LearnedKnowledgeConfig(mode=LearningMode.AGENTIC),
-    ),
-)
-```
+### Condenser
 
-**Learning Machine provides:**
-- `search_learnings` / `save_learning` tools
-- `user_profile` - structured facts about user
-- `user_memory` - unstructured observations
+When conversations exceed 100 events, `LLMSummarizingCondenser` compresses older messages into a summary while preserving the system prompt and first user message. This keeps the agent within token limits during long analytical sessions without losing important context (e.g., discovered schema quirks).
+
+### Security Policy
+
+`ConfirmRisky` pauses execution and prompts for user confirmation when the LLM predicts a HIGH-risk action. Since Dash runs read-only SQL, this is mainly a safety net for the `save_validated_query` tool. Enable in CLI with `--confirm` or in the API with `DASH_ENABLE_CONFIRMATION=true`.
+
+### Persistence
+
+Conversations are saved to `.dash_sessions/` by default. In the CLI, each session gets a UUID printed on startup — pass it with `--session <uuid>` to resume. The API automatically persists all sessions and accepts `session_id` in the request body.
 
 ## The Six Layers of Context
 
@@ -98,10 +108,10 @@ dash = Agent(
 |-------|--------|------|
 | 1. Table Usage | `dash/knowledge/tables/*.json` | `dash/context/semantic_model.py` |
 | 2. Business Rules | `dash/knowledge/business/*.json` | `dash/context/business_rules.py` |
-| 3. Query Patterns | `dash/knowledge/queries/*.sql` | Loaded into knowledge base |
-| 4. Institutional Knowledge | Exa MCP | `dash/agents.py` |
-| 5. Learnings | Learning Machine | Separate knowledge base |
-| 6. Runtime Context | `introspect_schema` | `dash/tools/introspect.py` |
+| 3. Query Patterns | `dash/knowledge/queries/*.sql` | Loaded into instructions |
+| 4. Runtime Context | `introspect_schema` tool | `dash/tools/introspect.py` |
+| 5. SQL Execution | `run_sql` tool | `dash/tools/sql.py` |
+| 6. Saved Queries | `save_validated_query` tool | `dash/tools/save_query.py` |
 
 ## Data Quality (F1 Dataset)
 
@@ -111,22 +121,13 @@ dash = Agent(
 | `position` is INTEGER in `constructors_championship` | Use `position = 1` |
 | `date` is TEXT in `race_wins` | Use `TO_DATE(date, 'DD Mon YYYY')` |
 
-## Evaluation System
-
-Three evaluation modes (can be combined):
-
-| Mode | Flag | Description |
-|------|------|-------------|
-| String matching | (default) | Check if expected strings appear in response |
-| LLM grader | `-g` | Use GPT to evaluate response quality |
-| Result comparison | `-r` | Execute golden SQL and compare results |
-
-Test cases use `TestCase` dataclass with optional `golden_sql` for validation.
-
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API key |
-| `EXA_API_KEY` | No | Exa for web research |
-| `DB_*` | No | Database config |
+| `LLM_API_KEY` | Yes | API key for your LLM provider |
+| `LLM_MODEL` | No | Model name (default: `openai/gpt-4.1`) |
+| `LLM_BASE_URL` | No | Custom API base URL |
+| `DASH_PERSISTENCE_DIR` | No | Custom persistence directory (API) |
+| `DASH_ENABLE_CONFIRMATION` | No | Enable security confirmation (API) |
+| `DB_*` | No | Database config (defaults: ai/ai/ai) |

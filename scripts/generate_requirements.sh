@@ -2,7 +2,7 @@
 
 ############################################################################
 #
-#    Agno Requirements Generator
+#    Dash Requirements Generator
 #
 #    Usage:
 #      ./scripts/generate_requirements.sh           # Generate
@@ -16,13 +16,13 @@ CURR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${CURR_DIR}")"
 
 # Colors
-ORANGE='\033[38;5;208m'
+CYAN='\033[36m'
 DIM='\033[2m'
 BOLD='\033[1m'
 NC='\033[0m'
 
 echo ""
-echo -e "    ${ORANGE}▸${NC} ${BOLD}Generating requirements.txt${NC}"
+echo -e "    ${CYAN}▸${NC} ${BOLD}Generating requirements.txt${NC}"
 echo ""
 
 if [[ "$1" = "upgrade" ]]; then

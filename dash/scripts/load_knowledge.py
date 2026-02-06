@@ -1,44 +1,53 @@
 """
-Load Knowledge - Loads table metadata, queries, and business rules into knowledge base.
+Load Knowledge - Lists and validates knowledge files.
+
+The OpenHands SDK version of Dash uses file-based knowledge
+(loaded directly into the system prompt via context modules)
+rather than a vector database.
+
+This script validates that all knowledge files are present and loadable.
 
 Usage:
-    python -m dash.scripts.load_knowledge             # Upsert (update existing)
-    python -m dash.scripts.load_knowledge --recreate  # Drop and reload all
+    python -m dash.scripts.load_knowledge
 """
 
-import argparse
+import json
 
-from dash.paths import KNOWLEDGE_DIR
+from dash.context.business_rules import load_business_rules
+from dash.context.semantic_model import load_table_metadata
+from dash.paths import KNOWLEDGE_DIR, QUERIES_DIR
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Load knowledge into vector database")
-    parser.add_argument(
-        "--recreate",
-        action="store_true",
-        help="Drop existing knowledge and reload from scratch",
-    )
-    args = parser.parse_args()
+    print(f"Knowledge directory: {KNOWLEDGE_DIR}\n")
 
-    from dash.agents import dash_knowledge
+    # Tables
+    tables = load_table_metadata()
+    print(f"Tables: {len(tables)} loaded")
+    for t in tables:
+        print(f"  - {t['table_name']}: {t.get('description', '')[:60]}")
+    print()
 
-    if args.recreate:
-        print("Recreating knowledge base (dropping existing data)...\n")
-        if dash_knowledge.vector_db:
-            dash_knowledge.vector_db.drop()
-            dash_knowledge.vector_db.create()
+    # Business rules
+    business = load_business_rules()
+    print(f"Metrics: {len(business['metrics'])}")
+    print(f"Business rules: {len(business['business_rules'])}")
+    print(f"Common gotchas: {len(business['common_gotchas'])}")
+    print()
 
-    print(f"Loading knowledge from: {KNOWLEDGE_DIR}\n")
-
-    for subdir in ["tables", "queries", "business"]:
-        path = KNOWLEDGE_DIR / subdir
-        if not path.exists():
-            print(f"  {subdir}/: (not found)")
-            continue
-
-        files = [f for f in path.iterdir() if f.is_file() and not f.name.startswith(".")]
-        print(f"  {subdir}/: {len(files)} files")
-
-        if files:
-            dash_knowledge.insert(name=f"knowledge-{subdir}", path=str(path))
+    # Queries
+    if QUERIES_DIR.exists():
+        query_files = list(QUERIES_DIR.glob("*.sql")) + list(QUERIES_DIR.glob("*.json"))
+        print(f"Saved queries: {len(query_files)} files")
+        for f in sorted(query_files):
+            if f.suffix == ".json":
+                try:
+                    data = json.loads(f.read_text())
+                    print(f"  - {data.get('name', f.stem)}: {data.get('question', '')[:50]}")
+                except (json.JSONDecodeError, OSError):
+                    print(f"  - {f.name} (error reading)")
+            else:
+                print(f"  - {f.name}")
+    else:
+        print("Saved queries: (directory not found)")
 
     print("\nDone!")

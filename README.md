@@ -1,6 +1,6 @@
 # Dash
 
-Dash is a **self-learning data agent** that grounds its answers in **6 layers of context** and improves with every run.
+Dash is a **self-learning data agent** that grounds its answers in **6 layers of context** and improves with every run. Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk).
 
 Inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-in-house-data-agent/).
 
@@ -8,25 +8,24 @@ Inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-i
 
 ```sh
 # Clone this repo
-git clone https://github.com/agno-agi/dash.git && cd dash
-# Add OPENAI_API_KEY by adding to .env file or export OPENAI_API_KEY=sk-***
+git clone https://github.com/rajivshah/dash.git && cd dash
+
+# Set your LLM API key
 cp example.env .env
+# Edit .env with your API key (any LiteLLM-supported provider works)
 
-# Start the application
-docker compose up -d --build
+# Start the database
+docker compose up -d dash-db
 
-# Load sample data and knowledge
-docker exec -it dash-api python -m dash.scripts.load_data
-docker exec -it dash-api python -m dash.scripts.load_knowledge
+# Setup and activate virtual environment
+./scripts/venv_setup.sh && source .venv/bin/activate
+
+# Load sample data
+python -m dash.scripts.load_data
+
+# Run Dash
+python -m dash
 ```
-
-Confirm dash is running by navigation to [http://localhost:8000/docs](http://localhost:8000/docs).
-
-## Connect to the Web UI
-
-1. Open [os.agno.com](https://os.agno.com) and login
-2. Add OS → Local → `http://localhost:8000`
-3. Click "Connect"
 
 **Try it** (sample F1 dataset):
 
@@ -55,27 +54,19 @@ Dash solves this with **6 layers of grounded context**, a **self-learning loop**
 | **Table Usage** | Schema, columns, relationships | `knowledge/tables/*.json` |
 | **Human Annotations** | Metrics, definitions, and business rules | `knowledge/business/*.json` |
 | **Query Patterns** | SQL that is known to work | `knowledge/queries/*.sql` |
-| **Institutional Knowledge** | Docs, wikis, external references | MCP (optional) |
-| **Learnings** | Error patterns and discovered fixes | Agno `Learning Machine` |
+| **Saved Queries** | Validated queries the agent saves for reuse | `save_validated_query` tool |
 | **Runtime Context** | Live schema changes | `introspect_schema` tool |
 
-The agent retrieves relevant context at query time via hybrid search, then generates SQL grounded in patterns that already work.
+The agent retrieves relevant context at query time, then generates SQL grounded in patterns that already work.
 
 ## The Self-Learning Loop
 
 Dash improves without retraining or fine-tuning. We call this gpu-poor continuous learning.
 
-It learns through two complementary systems:
-
-| System | Stores | How It Evolves |
-|------|--------|----------------|
-| **Knowledge** | Validated queries and business context | Curated by you + dash |
-| **Learnings** | Error patterns and fixes | Managed by `Learning Machine` automatically |
-
 ```
 User Question
      ↓
-Retrieve Knowledge + Learnings
+Load Knowledge (semantic model + business rules)
      ↓
 Reason about intent
      ↓
@@ -87,17 +78,16 @@ Execute and interpret
  ↓         ↓
 Success    Error
  ↓         ↓
- ↓         Diagnose → Fix → Save Learning
- ↓                           (never repeated)
+ ↓         Introspect schema → Fix → Retry
  ↓
 Return insight
  ↓
-Optionally save as Knowledge
+Optionally save as validated query
 ```
 
-**Knowledge** is curated—validated queries and business context you want the agent to build on.
+**Knowledge** is curated — validated queries and business context you want the agent to build on.
 
-**Learnings** is discovered—patterns the agent finds through trial and error. When a query fails because `position` is TEXT not INTEGER, the agent saves that gotcha. Next time, it knows.
+**Runtime learning** is discovered — when a query fails because `position` is TEXT not INTEGER, the agent introspects the schema and self-corrects. Validated queries are saved for future reuse.
 
 ## Insights, Not Just Rows
 
@@ -108,46 +98,19 @@ Who won the most races in 2019?
 
 | Typical SQL Agent | Dash |
 |------------------|------|
-| `Hamilton: 11` | Lewis Hamilton dominated 2019 with **11 wins out of 21 races**, more than double Bottas’s 4 wins. This performance secured his sixth world championship. |
+| `Hamilton: 11` | Lewis Hamilton dominated 2019 with **11 wins out of 21 races**, more than double Bottas's 4 wins. This performance secured his sixth world championship. |
 
-## Deploy to Railway
+## How It Works
 
-```sh
-railway login
+Dash is built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk) with three custom tools:
 
-./scripts/railway_up.sh
-```
+| Tool | Purpose |
+|------|---------|
+| `run_sql` | Execute read-only SQL queries against PostgreSQL |
+| `introspect_schema` | Discover tables, columns, types, and sample data at runtime |
+| `save_validated_query` | Save proven queries for future reuse |
 
-### Production Operations
-
-**Load data and knowledge:**
-```sh
-railway run python -m dash.scripts.load_data
-railway run python -m dash.scripts.load_knowledge
-```
-
-**View logs:**
-
-```sh
-railway logs --service dash
-```
-
-**Run commands in production:**
-
-```sh
-railway run python -m dash  # CLI mode
-```
-
-**Redeploy after changes:**
-
-```sh
-railway up --service dash -d
-```
-
-**Open dashboard:**
-```sh
-railway open
-```
+The agent's behavior is configured via an `AgentContext` with a `Skill` that injects the semantic model, business rules, and instructions into the system prompt.
 
 ## Adding Knowledge
 
@@ -162,7 +125,7 @@ knowledge/
 
 ### Table Metadata
 
-```
+```json
 {
   "table_name": "orders",
   "table_description": "Customer orders with denormalized line items",
@@ -177,7 +140,7 @@ knowledge/
 
 ### Query Patterns
 
-```
+```sql
 -- <query name>monthly_revenue</query name>
 -- <query description>
 -- Monthly revenue calculation.
@@ -197,7 +160,7 @@ ORDER BY 1 DESC
 
 ### Business Rules
 
-```
+```json
 {
   "metrics": [
     {
@@ -214,33 +177,52 @@ ORDER BY 1 DESC
 }
 ```
 
-### Load Knowledge
+### Validate Knowledge
 
 ```sh
-python -m dash.scripts.load_knowledge            # Upsert changes
-python -m dash.scripts.load_knowledge --recreate # Fresh start
+python -m dash.scripts.load_knowledge
 ```
 
 ## Local Development
 
 ```sh
+# Setup
 ./scripts/venv_setup.sh && source .venv/bin/activate
 docker compose up -d dash-db
 python -m dash.scripts.load_data
-python -m dash  # CLI mode
+
+# Run
+python -m dash                          # Interactive CLI
+python -m dash "Who won in 2019?"       # One-shot query
+python -m app.main                      # API server (FastAPI)
+
+# Evals
+python -m dash.evals.run_evals              # String matching
+python -m dash.evals.run_evals -g           # LLM grader
+python -m dash.evals.run_evals -g -r -v     # Full evaluation
 ```
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | OpenAI API key |
-| `EXA_API_KEY` | No | Web search for external knowledge |
-| `DB_*` | No | Database config (defaults to localhost) |
+| `LLM_API_KEY` | Yes | API key for your LLM provider ([any LiteLLM provider](https://docs.litellm.ai/docs/providers)) |
+| `LLM_MODEL` | No | Model name (default: `openai/gpt-4.1`) |
+| `LLM_BASE_URL` | No | Custom API base URL |
+| `DB_*` | No | Database config (defaults to `ai`/`ai`/`ai` on localhost) |
+
+## Deploy with Docker
+
+```sh
+# Full stack (DB + API)
+docker compose up -d --build
+
+# Load data
+docker exec -it dash-api python -m dash.scripts.load_data
+```
 
 ## Further Reading
 
 - [OpenAI's In-House Data Agent](https://openai.com/index/inside-our-in-house-data-agent/) — the inspiration
 - [Self-Improving SQL Agent](https://www.ashpreetbedi.com/articles/sql-agent) — deep dive on an earlier architecture
-- [Agno Docs](https://docs.agno.com)
-- [Discord](https://agno.com/discord)
+- [OpenHands SDK Docs](https://docs.openhands.dev/sdk) — the framework Dash is built on

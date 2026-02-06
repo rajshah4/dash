@@ -5,22 +5,17 @@ description = "A self-learning data agent that provides insights, not just query
 requires-python = ">=3.12,<4"
 readme = "README.md"
 license-files = ["LICENSE"]
-authors = [{ name = "Agno", email = "hello@agno.com" }]
 
 dependencies = [
-  "agno-infra",
-  "agno",
+  "openhands-sdk",
+  "openhands-tools",
   "fastapi[standard]",
   "httpx",
-  "mcp",
   "openai",
-  "openinference-instrumentation-agno",
-  "opentelemetry-api",
-  "opentelemetry-sdk",
   "pandas",
-  "pgvector",
   "psycopg[binary]",
   "sqlalchemy",
+  "rich",
 ]
 
 [project.optional-dependencies]
@@ -48,8 +43,5 @@ plugins = ["pydantic.mypy"]
 exclude = [".venv*"]
 
 [[tool.mypy.overrides]]
-module = ["pgvector.*", "setuptools.*", "agno.*", "pandas.*", "httpx.*"]
+module = ["setuptools.*", "pandas.*", "httpx.*", "openhands.*"]
 ignore_missing_imports = true
-
-[tool.uv.pip]
-no-annotate = true

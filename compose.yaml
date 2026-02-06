@@ -1,12 +1,12 @@
 services:
   dash-db:
-    image: agnohq/pgvector:18
+    image: pgvector/pgvector:pg17
     container_name: dash-db
     restart: unless-stopped
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql
+      - pgdata:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: ${DB_USER:-ai}
       POSTGRES_PASSWORD: ${DB_PASS:-ai}
@@ -30,16 +30,14 @@ services:
     environment:
       DATA_DIR: /data
       RUNTIME_ENV: dev
-      AGNO_DEBUG: "True"
       DB_HOST: dash-db
       DB_PORT: 5432
       DB_USER: ${DB_USER:-ai}
       DB_PASS: ${DB_PASS:-ai}
       DB_DATABASE: ${DB_DATABASE:-ai}
       WAIT_FOR_DB: "True"
-      PRINT_ENV_ON_LOAD: "True"
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      EXA_API_KEY: ${EXA_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-${OPENAI_API_KEY}}
+      LLM_MODEL: ${LLM_MODEL:-openai/gpt-4.1}
     depends_on:
       - dash-db
     networks:

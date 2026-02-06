@@ -2,12 +2,11 @@
 App Module
 ==========
 
-AgentOS application entry point.
+FastAPI application entry point.
 """
 
-from app.main import agent_os, app
+from app.main import app
 
 __all__ = [
-    "agent_os",
     "app",
 ]

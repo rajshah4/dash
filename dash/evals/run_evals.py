@@ -72,6 +72,8 @@ def run_evals(
         llm_grader: Use LLM to grade responses
         compare_results: Compare actual results against golden SQL results
     """
+    from openhands.sdk import Conversation
+
     from dash.agents import dash
 
     # Filter tests
@@ -116,8 +118,14 @@ def run_evals(
             test_start = time.time()
 
             try:
-                result = dash.run(test_case.question)
-                response = result.content or ""
+                # Create a fresh conversation per test
+                conversation = Conversation(agent=dash, workspace=".")
+                conversation.send_message(test_case.question)
+                conversation.run()
+
+                # Get response — use ask_agent to extract the answer
+                response = conversation.ask_agent(test_case.question)
+                conversation.close()
                 duration = time.time() - test_start
 
                 # Evaluate the response
@@ -199,16 +207,11 @@ def evaluate_response(
             golden_result = execute_golden_sql(test_case.golden_sql)
             result["golden_result"] = golden_result
 
-            # Simple check: do expected values appear in golden result?
-            # For now, just verify golden SQL runs and check expected strings
-            # A more sophisticated version could extract agent's SQL and compare results
-
-            # Check if expected strings match golden result values
             golden_values = [str(v) for row in golden_result for v in row.values()]
             result_pass = all(
                 any(exp.lower() in gv.lower() for gv in golden_values)
                 for exp in test_case.expected_strings
-                if exp.isalpha()  # Only check name strings, not numbers
+                if exp.isalpha()
             )
             result["result_match"] = result_pass
             result["result_explanation"] = (
@@ -245,7 +248,6 @@ def evaluate_response(
             result["llm_reasoning"] = f"Error: {e}"
 
     # Determine final status
-    # Priority: LLM grader > result comparison > string matching
     if llm_grader and llm_pass is not None:
         result["status"] = "PASS" if llm_pass else "FAIL"
     elif compare_results and result_pass is not None:
@@ -309,7 +311,6 @@ def display_results(
                 resp = r["response"] or ""
                 panel_content = resp[:500] + "..." if len(resp) > 500 else resp
 
-                # Add grading info if available
                 if r.get("llm_reasoning"):
                     panel_content += f"\n\n[dim]LLM Reasoning: {r['llm_reasoning']}[/dim]"
                 if r.get("result_explanation"):
@@ -342,7 +343,6 @@ def display_summary(results: list[EvalResult], total_duration: float, category: 
     summary.add_row("Errors:", Text(str(errors), style="yellow" if errors else "dim"))
     summary.add_row("Avg time:", f"{total_duration / total:.1f}s per test" if total else "N/A")
 
-    # Add LLM grading average if available
     llm_grades: list[float] = [
         r["llm_grade"] for r in results if r.get("llm_grade") is not None and isinstance(r["llm_grade"], (int, float))
     ]

@@ -1,56 +1,89 @@
-"""Runtime schema inspection (Layer 6)."""
+"""Runtime schema inspection tool (Layer 6)."""
 
-from agno.tools import tool
-from agno.utils.log import logger
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
+
+from pydantic import Field
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import DatabaseError, OperationalError
 
+from openhands.sdk.tool.schema import Action, Observation
+from openhands.sdk.tool.tool import ToolAnnotations, ToolDefinition, ToolExecutor
 
-def create_introspect_schema_tool(db_url: str):
-    """Create introspect_schema tool with database connection."""
-    engine = create_engine(db_url)
 
-    @tool
-    def introspect_schema(
-        table_name: str | None = None,
-        include_sample_data: bool = False,
-        sample_limit: int = 5,
-    ) -> str:
-        """Inspect database schema at runtime.
+if TYPE_CHECKING:
+    from openhands.sdk.conversation import LocalConversation
+    from openhands.sdk.conversation.state import ConversationState
 
-        Args:
-            table_name: Table to inspect. If None, lists all tables.
-            include_sample_data: Include sample rows.
-            sample_limit: Number of sample rows.
-        """
+
+# ============================================================================
+# Action / Observation schemas
+# ============================================================================
+
+
+class IntrospectSchemaAction(Action):
+    """Inspect the database schema at runtime."""
+
+    table_name: str | None = Field(default=None, description="Table to inspect. If None, lists all tables.")
+    include_sample_data: bool = Field(default=False, description="Include sample rows from the table.")
+    sample_limit: int = Field(default=5, description="Number of sample rows to return.")
+
+
+class IntrospectSchemaObservation(Observation):
+    """Result of a schema introspection."""
+
+    pass
+
+
+# ============================================================================
+# Executor
+# ============================================================================
+
+
+class IntrospectSchemaExecutor(ToolExecutor[IntrospectSchemaAction, IntrospectSchemaObservation]):
+    """Inspect database schema at runtime."""
+
+    def __init__(self, db_url: str) -> None:
+        self.engine = create_engine(db_url)
+
+    def __call__(
+        self,
+        action: IntrospectSchemaAction,
+        conversation: "LocalConversation | None" = None,
+    ) -> IntrospectSchemaObservation:
         try:
-            insp = inspect(engine)
+            insp = inspect(self.engine)
 
-            if table_name is None:
+            if action.table_name is None:
                 # List all tables
                 tables = insp.get_table_names()
                 if not tables:
-                    return "No tables found."
+                    return IntrospectSchemaObservation.from_text("No tables found.")
 
                 lines = ["## Tables", ""]
                 for t in sorted(tables):
                     try:
-                        with engine.connect() as conn:
+                        with self.engine.connect() as conn:
                             count = conn.execute(text(f'SELECT COUNT(*) FROM "{t}"')).scalar()
                             lines.append(f"- **{t}** ({count:,} rows)")
                     except (OperationalError, DatabaseError):
                         lines.append(f"- **{t}**")
-                return "\n".join(lines)
+                return IntrospectSchemaObservation.from_text("\n".join(lines))
 
             # Inspect specific table
             tables = insp.get_table_names()
-            if table_name not in tables:
-                return f"Table '{table_name}' not found. Available: {', '.join(sorted(tables))}"
+            if action.table_name not in tables:
+                return IntrospectSchemaObservation.from_text(
+                    f"Table '{action.table_name}' not found. Available: {', '.join(sorted(tables))}",
+                    is_error=True,
+                )
 
-            lines = [f"## {table_name}", ""]
+            lines = [f"## {action.table_name}", ""]
 
             # Columns
-            cols = insp.get_columns(table_name)
+            cols = insp.get_columns(action.table_name)
             if cols:
                 lines.extend(["### Columns", "", "| Column | Type | Nullable |", "| --- | --- | --- |"])
                 for c in cols:
@@ -59,17 +92,19 @@ def create_introspect_schema_tool(db_url: str):
                 lines.append("")
 
             # Primary key
-            pk = insp.get_pk_constraint(table_name)
+            pk = insp.get_pk_constraint(action.table_name)
             if pk and pk.get("constrained_columns"):
                 lines.append(f"**Primary Key:** {', '.join(pk['constrained_columns'])}")
                 lines.append("")
 
             # Sample data
-            if include_sample_data:
+            if action.include_sample_data:
                 lines.append("### Sample")
                 try:
-                    with engine.connect() as conn:
-                        result = conn.execute(text(f'SELECT * FROM "{table_name}" LIMIT {sample_limit}'))
+                    with self.engine.connect() as conn:
+                        result = conn.execute(
+                            text(f'SELECT * FROM "{action.table_name}" LIMIT {action.sample_limit}')
+                        )
                         rows = result.fetchall()
                         col_names = list(result.keys())
                         if rows:
@@ -83,13 +118,56 @@ def create_introspect_schema_tool(db_url: str):
                 except (OperationalError, DatabaseError) as e:
                     lines.append(f"_Error: {e}_")
 
-            return "\n".join(lines)
+            return IntrospectSchemaObservation.from_text("\n".join(lines))
 
         except OperationalError as e:
-            logger.error(f"Database connection failed: {e}")
-            return f"Error: Database connection failed - {e}"
+            return IntrospectSchemaObservation.from_text(f"Error: Database connection failed - {e}", is_error=True)
         except DatabaseError as e:
-            logger.error(f"Database error: {e}")
-            return f"Error: {e}"
+            return IntrospectSchemaObservation.from_text(f"Error: {e}", is_error=True)
 
-    return introspect_schema
+    def close(self) -> None:
+        self.engine.dispose()
+
+
+# ============================================================================
+# Tool Definition
+# ============================================================================
+
+
+TOOL_DESCRIPTION = """\
+Inspect the database schema at runtime.
+
+Use this to discover tables, columns, types, and sample data.
+- Call with no arguments to list all tables
+- Call with table_name to see columns and types
+- Set include_sample_data=true to see sample rows
+"""
+
+
+class IntrospectSchemaTool(ToolDefinition[IntrospectSchemaAction, IntrospectSchemaObservation]):
+    """Schema introspection tool."""
+
+    @classmethod
+    def create(
+        cls,
+        conv_state: "ConversationState | None" = None,
+        db_url: str = "",
+        **kwargs: Any,
+    ) -> Sequence["IntrospectSchemaTool"]:
+        if not db_url:
+            raise ValueError("db_url is required for IntrospectSchemaTool")
+        return [
+            cls(
+                description=TOOL_DESCRIPTION,
+                action_type=IntrospectSchemaAction,
+                observation_type=IntrospectSchemaObservation,
+                annotations=ToolAnnotations(
+                    title="introspect_schema",
+                    readOnlyHint=True,
+                    destructiveHint=False,
+                    idempotentHint=True,
+                    openWorldHint=False,
+                ),
+                executor=IntrospectSchemaExecutor(db_url),
+            )
+        ]

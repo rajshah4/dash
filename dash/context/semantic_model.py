@@ -1,12 +1,13 @@
 """Load table metadata for the system prompt."""
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
-from agno.utils.log import logger
-
 from dash.paths import TABLES_DIR
+
+logger = logging.getLogger(__name__)
 
 MAX_QUALITY_NOTES = 5
 
