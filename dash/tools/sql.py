@@ -63,7 +63,7 @@ class RunSQLExecutor(ToolExecutor[RunSQLAction, RunSQLObservation]):
             if f" {kw} " in f" {sql_lower} ":
                 return RunSQLObservation.from_text(f"Error: Query contains dangerous keyword: {kw}", is_error=True)
 
-        # Ensure LIMIT — cap at action.limit even if user already has a higher one
+        # Append LIMIT if the query doesn't already have one
         if "limit" not in sql_lower:
             query = f"{query}\nLIMIT {action.limit}"
 

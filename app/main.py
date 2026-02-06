@@ -8,7 +8,9 @@ Provides a FastAPI server with /chat, /sessions, and /health endpoints.
 Features:
 - Persistent conversations (saved to disk, resumable by session_id)
 - Security confirmation policy (optional)
-- LRU session eviction to bound memory usage
+- LRU session eviction with in-flight protection
+- Per-session locking to prevent concurrent corruption
+- Configurable timeout on agent execution
 
 Run:
     python -m app.main
@@ -39,6 +41,7 @@ PERSISTENCE_DIR = Path(getenv("DASH_PERSISTENCE_DIR", str(PROJECT_ROOT / ".dash_
 ENABLE_CONFIRMATION = getenv("DASH_ENABLE_CONFIRMATION", "false").lower() == "true"
 MAX_SESSIONS = int(getenv("DASH_MAX_SESSIONS", "100"))
 SESSION_TTL_SECONDS = int(getenv("DASH_SESSION_TTL", str(60 * 60)))  # 1 hour default
+CHAT_TIMEOUT_SECONDS = int(getenv("DASH_CHAT_TIMEOUT", "300"))  # 5 min default
 
 # ============================================================================
 # FastAPI App
@@ -67,48 +70,78 @@ class SessionInfo(BaseModel):
 
 
 # ============================================================================
-# Session management with persistence + LRU eviction
+# Session management with per-session locking + LRU eviction
 # ============================================================================
 
-_sessions: OrderedDict[str, tuple[Conversation, float]] = OrderedDict()
+
+class _SessionEntry:
+    """Wraps a Conversation with a per-session lock and in-flight counter."""
+
+    __slots__ = ("conversation", "lock", "last_used", "in_flight")
+
+    def __init__(self, conversation: Conversation) -> None:
+        self.conversation = conversation
+        self.lock = threading.Lock()  # serialises requests to the same session
+        self.last_used = time.monotonic()
+        self.in_flight = 0  # number of requests currently using this session
+
+    def touch(self) -> None:
+        self.last_used = time.monotonic()
+
+
+_sessions: OrderedDict[str, _SessionEntry] = OrderedDict()
 _sessions_lock = threading.Lock()
 
 
 def _evict_stale_sessions() -> None:
-    """Remove sessions that exceed TTL or the max count (LRU)."""
+    """Remove idle sessions that exceed TTL or the max count (LRU).
+
+    Sessions with in-flight requests are never evicted.
+    """
     now = time.monotonic()
     with _sessions_lock:
-        # Evict expired sessions
-        expired = [sid for sid, (_, ts) in _sessions.items() if now - ts > SESSION_TTL_SECONDS]
+        # Evict expired idle sessions
+        expired = [
+            sid
+            for sid, entry in _sessions.items()
+            if entry.in_flight == 0 and now - entry.last_used > SESSION_TTL_SECONDS
+        ]
         for sid in expired:
-            conv, _ = _sessions.pop(sid)
+            entry = _sessions.pop(sid)
             try:
-                conv.close()
+                entry.conversation.close()
             except Exception:
                 pass
 
-        # Evict oldest if over capacity
+        # Evict oldest idle sessions if over capacity
         while len(_sessions) > MAX_SESSIONS:
-            _, (conv, _) = _sessions.popitem(last=False)
-            try:
-                conv.close()
-            except Exception:
-                pass
+            # Find the oldest idle session (LRU = first item, but skip in-flight)
+            evicted = False
+            for sid, entry in list(_sessions.items()):
+                if entry.in_flight == 0:
+                    _sessions.pop(sid)
+                    try:
+                        entry.conversation.close()
+                    except Exception:
+                        pass
+                    evicted = True
+                    break
+            if not evicted:
+                break  # all sessions are in-flight, can't evict
 
 
-def _get_or_create_conversation(session_id: str | None) -> tuple[Conversation, str]:
-    """Get an existing conversation or create a new one with persistence."""
+def _get_or_create_session(session_id: str | None) -> tuple[_SessionEntry, str]:
+    """Get an existing session or create a new one with persistence."""
     _evict_stale_sessions()
 
     with _sessions_lock:
-        # Resume existing in-memory session
         if session_id and session_id in _sessions:
-            conv, _ = _sessions[session_id]
+            entry = _sessions[session_id]
             _sessions.move_to_end(session_id)  # refresh LRU position
-            _sessions[session_id] = (conv, time.monotonic())
-            return conv, session_id
+            entry.touch()
+            return entry, session_id
 
-    # Try to resume from disk
+    # Create new conversation (outside global lock — constructor may do I/O)
     conv_id: uuid.UUID | None = None
     if session_id:
         try:
@@ -127,11 +160,12 @@ def _get_or_create_conversation(session_id: str | None) -> tuple[Conversation, s
         conv.set_confirmation_policy(confirmation_policy)
 
     sid = str(getattr(conv, "conversation_id", session_id or uuid.uuid4()))
+    entry = _SessionEntry(conv)
 
     with _sessions_lock:
-        _sessions[sid] = (conv, time.monotonic())
+        _sessions[sid] = entry
 
-    return conv, sid
+    return entry, sid
 
 
 # ============================================================================
@@ -142,21 +176,38 @@ def _get_or_create_conversation(session_id: str | None) -> tuple[Conversation, s
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     """Send a message to Dash and get a response."""
-    conversation, sid = _get_or_create_conversation(request.session_id)
+    entry, sid = _get_or_create_session(request.session_id)
 
     def _run_sync() -> str:
-        conversation.send_message(request.message)
-        conversation.run()
-        return get_agent_final_response(conversation.state.events)
+        entry.in_flight += 1
+        try:
+            # Per-session lock serialises concurrent requests to the same session
+            with entry.lock:
+                entry.touch()
+                entry.conversation.send_message(request.message)
+                entry.conversation.run()
+                return get_agent_final_response(entry.conversation.state.events)
+        finally:
+            entry.in_flight -= 1
 
-    response_text = await asyncio.to_thread(_run_sync)
+    try:
+        response_text = await asyncio.wait_for(
+            asyncio.to_thread(_run_sync),
+            timeout=CHAT_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=f"Agent did not respond within {CHAT_TIMEOUT_SECONDS}s",
+        )
+
     return ChatResponse(response=response_text, session_id=sid)
 
 
 @app.post("/sessions", response_model=SessionInfo)
 async def create_session() -> SessionInfo:
     """Create a new conversation session."""
-    _, sid = _get_or_create_conversation(None)
+    _, sid = _get_or_create_session(None)
     return SessionInfo(session_id=sid, persistence_dir=str(PERSISTENCE_DIR))
 
 
@@ -167,7 +218,6 @@ async def get_session(session_id: str) -> SessionInfo:
         in_memory = session_id in _sessions
 
     if not in_memory:
-        # Check if it exists on disk
         try:
             conv_id = uuid.UUID(session_id)
             persist_path = Conversation.get_persistence_dir(str(PERSISTENCE_DIR), conv_id)
