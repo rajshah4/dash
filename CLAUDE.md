@@ -128,6 +128,10 @@ Conversations are saved to `.dash_sessions/` by default. In the CLI, each sessio
 | `LLM_API_KEY` | Yes | API key for your LLM provider |
 | `LLM_MODEL` | No | Model name (default: `openai/gpt-4.1`) |
 | `LLM_BASE_URL` | No | Custom API base URL |
+| `LMNR_PROJECT_API_KEY` | No | Laminar API key for tracing (auto-enabled) |
 | `DASH_PERSISTENCE_DIR` | No | Custom persistence directory (API) |
 | `DASH_ENABLE_CONFIRMATION` | No | Enable security confirmation (API) |
+| `DASH_CHAT_TIMEOUT` | No | Request timeout in seconds (default: 300) |
+| `DASH_MAX_SESSIONS` | No | Max in-memory sessions (default: 100) |
+| `DASH_SESSION_TTL` | No | Session TTL in seconds (default: 3600) |
 | `DB_*` | No | Database config (defaults: ai/ai/ai) |
