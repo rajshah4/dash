@@ -111,7 +111,7 @@ class IntrospectSchemaExecutor(ToolExecutor[IntrospectSchemaAction, IntrospectSc
                             lines.append("| " + " | ".join(col_names) + " |")
                             lines.append("| " + " | ".join(["---"] * len(col_names)) + " |")
                             for row in rows:
-                                vals = [str(v)[:30] if v else "NULL" for v in row]
+                                vals = [str(v)[:30] if v is not None else "NULL" for v in row]
                                 lines.append("| " + " | ".join(vals) + " |")
                         else:
                             lines.append("_No data_")

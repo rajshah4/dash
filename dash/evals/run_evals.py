@@ -73,6 +73,7 @@ def run_evals(
         compare_results: Compare actual results against golden SQL results
     """
     from openhands.sdk import Conversation
+    from openhands.sdk.conversation.response_utils import get_agent_final_response
 
     from dash.agents import dash
 
@@ -123,8 +124,8 @@ def run_evals(
                 conversation.send_message(test_case.question)
                 conversation.run()
 
-                # Get response — use ask_agent to extract the answer
-                response = conversation.ask_agent(test_case.question)
+                # Extract the agent's final response from conversation events
+                response = get_agent_final_response(conversation.state.events)
                 conversation.close()
                 duration = time.time() - test_start
 

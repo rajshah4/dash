@@ -29,6 +29,7 @@ if __name__ == "__main__":
     for table, url in TABLES.items():
         print(f"Loading {table}...", end=" ", flush=True)
         response = httpx.get(url, timeout=30.0)
+        response.raise_for_status()
         df = pd.read_csv(StringIO(response.text))
         df.to_sql(table, engine, if_exists="replace", index=False)
         print(f"{len(df):,} rows")

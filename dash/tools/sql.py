@@ -9,7 +9,6 @@ from pydantic import Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DatabaseError, OperationalError
 
-from openhands.sdk.llm import TextContent
 from openhands.sdk.tool.schema import Action, Observation
 from openhands.sdk.tool.tool import ToolAnnotations, ToolDefinition, ToolExecutor
 
@@ -53,7 +52,7 @@ class RunSQLExecutor(ToolExecutor[RunSQLAction, RunSQLObservation]):
     def __call__(
         self, action: RunSQLAction, conversation: "LocalConversation | None" = None
     ) -> RunSQLObservation:
-        query = action.query.strip()
+        query = action.query.strip().rstrip(";")
         sql_lower = query.lower()
 
         # Safety checks
@@ -64,7 +63,7 @@ class RunSQLExecutor(ToolExecutor[RunSQLAction, RunSQLObservation]):
             if f" {kw} " in f" {sql_lower} ":
                 return RunSQLObservation.from_text(f"Error: Query contains dangerous keyword: {kw}", is_error=True)
 
-        # Ensure LIMIT
+        # Ensure LIMIT — cap at action.limit even if user already has a higher one
         if "limit" not in sql_lower:
             query = f"{query}\nLIMIT {action.limit}"
 
