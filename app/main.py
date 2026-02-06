@@ -11,16 +11,19 @@ Features:
 - LRU session eviction with in-flight protection
 - Per-session locking to prevent concurrent corruption
 - Configurable timeout on agent execution
+- Graceful shutdown via lifespan
 
 Run:
     python -m app.main
 """
 
 import asyncio
+import logging
 import threading
 import time
 import uuid
 from collections import OrderedDict
+from contextlib import asynccontextmanager
 from os import getenv
 from pathlib import Path
 
@@ -33,6 +36,8 @@ from openhands.sdk.conversation.response_utils import get_agent_final_response
 from dash.agents import confirmation_policy, dash
 from dash.paths import PROJECT_ROOT
 
+logger = logging.getLogger(__name__)
+
 # ============================================================================
 # Configuration
 # ============================================================================
@@ -43,31 +48,6 @@ MAX_SESSIONS = int(getenv("DASH_MAX_SESSIONS", "100"))
 SESSION_TTL_SECONDS = int(getenv("DASH_SESSION_TTL", str(60 * 60)))  # 1 hour default
 CHAT_TIMEOUT_SECONDS = int(getenv("DASH_CHAT_TIMEOUT", "300"))  # 5 min default
 
-# ============================================================================
-# FastAPI App
-# ============================================================================
-
-app = FastAPI(
-    title="Dash",
-    description="A self-learning data agent that provides insights, not just query results.",
-    version="1.0.0",
-)
-
-
-class ChatRequest(BaseModel):
-    message: str
-    session_id: str | None = None
-
-
-class ChatResponse(BaseModel):
-    response: str
-    session_id: str
-
-
-class SessionInfo(BaseModel):
-    session_id: str
-    persistence_dir: str
-
 
 # ============================================================================
 # Session management with per-session locking + LRU eviction
@@ -75,18 +55,32 @@ class SessionInfo(BaseModel):
 
 
 class _SessionEntry:
-    """Wraps a Conversation with a per-session lock and in-flight counter."""
+    """Wraps a Conversation with a per-session lock and atomic in-flight counter."""
 
-    __slots__ = ("conversation", "lock", "last_used", "in_flight")
+    __slots__ = ("conversation", "lock", "last_used", "_in_flight_lock", "_in_flight")
 
     def __init__(self, conversation: Conversation) -> None:
         self.conversation = conversation
         self.lock = threading.Lock()  # serialises requests to the same session
         self.last_used = time.monotonic()
-        self.in_flight = 0  # number of requests currently using this session
+        self._in_flight_lock = threading.Lock()  # guards the counter
+        self._in_flight = 0
 
     def touch(self) -> None:
         self.last_used = time.monotonic()
+
+    def acquire_flight(self) -> None:
+        with self._in_flight_lock:
+            self._in_flight += 1
+
+    def release_flight(self) -> None:
+        with self._in_flight_lock:
+            self._in_flight -= 1
+
+    @property
+    def in_flight(self) -> int:
+        with self._in_flight_lock:
+            return self._in_flight
 
 
 _sessions: OrderedDict[str, _SessionEntry] = OrderedDict()
@@ -115,7 +109,6 @@ def _evict_stale_sessions() -> None:
 
         # Evict oldest idle sessions if over capacity
         while len(_sessions) > MAX_SESSIONS:
-            # Find the oldest idle session (LRU = first item, but skip in-flight)
             evicted = False
             for sid, entry in list(_sessions.items()):
                 if entry.in_flight == 0:
@@ -128,6 +121,17 @@ def _evict_stale_sessions() -> None:
                     break
             if not evicted:
                 break  # all sessions are in-flight, can't evict
+
+
+def _close_all_sessions() -> None:
+    """Close every session — called during graceful shutdown."""
+    with _sessions_lock:
+        for sid, entry in list(_sessions.items()):
+            try:
+                entry.conversation.close()
+            except Exception:
+                logger.warning("Error closing session %s on shutdown", sid, exc_info=True)
+        _sessions.clear()
 
 
 def _get_or_create_session(session_id: str | None) -> tuple[_SessionEntry, str]:
@@ -169,6 +173,46 @@ def _get_or_create_session(session_id: str | None) -> tuple[_SessionEntry, str]:
 
 
 # ============================================================================
+# Lifespan — graceful shutdown
+# ============================================================================
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    yield
+    # Shutdown: close all conversations so tool executors are cleaned up
+    logger.info("Shutting down — closing %d session(s)", len(_sessions))
+    _close_all_sessions()
+
+
+# ============================================================================
+# FastAPI App
+# ============================================================================
+
+app = FastAPI(
+    title="Dash",
+    description="A self-learning data agent that provides insights, not just query results.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None
+
+
+class ChatResponse(BaseModel):
+    response: str
+    session_id: str
+
+
+class SessionInfo(BaseModel):
+    session_id: str
+    persistence_dir: str
+
+
+# ============================================================================
 # Endpoints
 # ============================================================================
 
@@ -179,7 +223,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     entry, sid = _get_or_create_session(request.session_id)
 
     def _run_sync() -> str:
-        entry.in_flight += 1
+        entry.acquire_flight()
         try:
             # Per-session lock serialises concurrent requests to the same session
             with entry.lock:
@@ -188,14 +232,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 entry.conversation.run()
                 return get_agent_final_response(entry.conversation.state.events)
         finally:
-            entry.in_flight -= 1
+            entry.release_flight()
 
     try:
         response_text = await asyncio.wait_for(
             asyncio.to_thread(_run_sync),
             timeout=CHAT_TIMEOUT_SECONDS,
         )
-    except TimeoutError:
+    except asyncio.TimeoutError:
         raise HTTPException(
             status_code=504,
             detail=f"Agent did not respond within {CHAT_TIMEOUT_SECONDS}s",
