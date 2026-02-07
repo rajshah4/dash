@@ -5,16 +5,16 @@
 # This runs the full OpenHands platform which provides:
 #   - Web UI with chat, terminal, file editor, and browser panels
 #   - Sandboxed runtime for bash, file editing, Python scripts
-#   - All of Dash's custom SQL tools (run_sql, introspect_schema, etc.)
+#   - Dash context injected via .openhands_instructions
 #
 # Usage:
 #   docker compose -f compose.platform.yaml up -d
+#   open http://localhost:3000
 #
-# Then either:
-#   1. Open http://localhost:3000 in your browser (OpenHands Web UI)
-#   2. python -m dash.platform  (CLI connecting to the platform)
+# The agent will automatically load Dash's context (6 layers of knowledge,
+# SQL rules, data quality gotchas) from .openhands_instructions.
 #
-# See README.md for full documentation.
+# The database is accessible from the sandbox via host.docker.internal:5432
 # =============================================================================
 
 services:
@@ -30,42 +30,30 @@ services:
       POSTGRES_USER: ${DB_USER:-ai}
       POSTGRES_PASSWORD: ${DB_PASS:-ai}
       POSTGRES_DB: ${DB_DATABASE:-ai}
-    networks:
-      - dash
 
-  openhands-server:
-    image: ghcr.io/all-hands-ai/openhands:latest
-    container_name: openhands-server
+  openhands:
+    image: docker.openhands.dev/openhands/openhands:latest
+    container_name: openhands-dash
     restart: unless-stopped
     ports:
       - "3000:3000"
     volumes:
-      # Mount Docker socket so OpenHands can create sandboxed containers
+      # Docker socket — OpenHands needs this to create sandbox containers
       - /var/run/docker.sock:/var/run/docker.sock
-      # Mount the Dash workspace so it's accessible in the sandbox
-      - .:/opt/workspace/dash
-      - openhands-state:/opt/openhands/state
+      # Persistent state (conversations, settings)
+      - openhands-state:/.openhands
     environment:
-      # LLM configuration (passed through to the agent)
+      # Workspace — OpenHands mounts this host directory into sandbox containers
+      WORKSPACE_BASE: ${PWD:-.}
+      # LLM configuration (configure once here, not per-conversation in UI)
       LLM_API_KEY: ${LLM_API_KEY:-${OPENAI_API_KEY}}
       LLM_MODEL: ${LLM_MODEL:-openai/gpt-4.1}
-      # Database configuration (accessible from within the sandbox)
-      DB_HOST: dash-db
-      DB_PORT: 5432
-      DB_USER: ${DB_USER:-ai}
-      DB_PASS: ${DB_PASS:-ai}
-      DB_DATABASE: ${DB_DATABASE:-ai}
-      # Tracing (optional)
-      LMNR_PROJECT_API_KEY: ${LMNR_PROJECT_API_KEY:-}
-    depends_on:
-      - dash-db
-    networks:
-      - dash
+      # NOTE: Do NOT set DB_* env vars here — OpenHands interprets them as
+      # its own database config. The agent learns the DB connection info from
+      # .openhands_instructions in the workspace instead.
     extra_hosts:
+      # So sandbox containers can reach the database via host.docker.internal
       - "host.docker.internal:host-gateway"
-
-networks:
-  dash:
 
 volumes:
   pgdata:

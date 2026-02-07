@@ -1,0 +1,9 @@
+{
+  "category": "data_pattern",
+  "description": "In race_wins, Ferrari victories are labeled exactly as 'Ferrari'. Customer teams using Ferrari engines appear as distinct names like 'STR Ferrari'. To count wins for Ferrari (the constructor), filter team = 'Ferrari' or team ILIKE 'Ferrari%' but explicitly exclude other patterns (e.g., NOT ILIKE 'STR Ferrari').",
+  "discovered_at": "2026-02-07T03:12:12.210727+00:00",
+  "tables_affected": [
+    "race_wins"
+  ],
+  "example": "-- Correct Ferrari-only filter\nWHERE team = 'Ferrari'\n-- Avoid this, which would include customers like STR Ferrari\n-- WHERE team ILIKE '%Ferrari%'"
+}

@@ -2,88 +2,90 @@
 Dash Platform Mode
 ==================
 
-Run Dash on the full OpenHands platform via RemoteConversation.
+Starts the OpenHands platform with Dash's context injected.
 
-This connects to a running OpenHands server and provides:
-  - Sandboxed bash terminal (psql, Python scripts, etc.)
-  - File editor (browse/edit knowledge, save reports)
-  - Browser (preview visualizations)
-  - Plus all custom SQL tools (run_sql, introspect_schema, save_validated_query)
+The OpenHands agent (CodeAct) gets Dash's 6 layers of context via the
+.openhands_instructions file in the workspace root. This turns the general
+coding agent into a data-specialized agent that knows:
+
+  - The database schema and connection details
+  - Critical data quality gotchas (position TEXT vs INTEGER, date formats)
+  - Validated SQL patterns that are known to work
+  - Business rules and metric definitions
+  - Learnings from previous sessions
+
+The agent uses the platform's built-in tools:
+  - bash (psql, Python scripts, data analysis)
+  - file editor (browse/edit knowledge files)
+  - browser (preview visualizations)
 
 Usage:
-    # 1. Start the OpenHands server (see compose.platform.yaml)
-    docker compose -f compose.platform.yaml up -d
+  # Start the platform
+  docker compose -f compose.platform.yaml up -d
 
-    # 2. Connect Dash to the platform
-    python -m dash.platform
+  # Open the web UI
+  python -m dash.platform
 
-    # Or use environment variables to configure:
-    OPENHANDS_HOST=http://localhost:3000 python -m dash.platform
-
-Environment variables:
-    OPENHANDS_HOST       OpenHands server URL (default: http://localhost:3000)
-    OPENHANDS_API_KEY    API key for the OpenHands server (optional)
+  # Or just open http://localhost:3000 directly
 """
 
-from os import getenv
+import os
+import subprocess
+import sys
+import webbrowser
 
-from openhands.sdk.conversation.impl.remote_conversation import RemoteConversation
-from openhands.sdk.conversation.response_utils import get_agent_final_response
-from openhands.sdk.logger import get_logger
-from openhands.sdk.workspace.remote.base import RemoteWorkspace
 
-from dash.agents import confirmation_policy, dash_platform
-
-logger = get_logger(__name__)
-
-OPENHANDS_HOST = getenv("OPENHANDS_HOST", "http://localhost:3000")
-OPENHANDS_API_KEY = getenv("OPENHANDS_API_KEY")
+OPENHANDS_URL = os.getenv("OPENHANDS_SERVER_URL", "http://localhost:3000")
 
 
 def main() -> None:
-    """Interactive CLI for Dash running on the OpenHands platform."""
-    print("━" * 60)
-    print("  Dash (Platform Mode)")
-    print(f"  Connected to: {OPENHANDS_HOST}")
-    print("  Type 'quit' or 'exit' to stop.")
-    print("━" * 60)
+    """Launch the OpenHands platform for Dash."""
+    print("=" * 60)
+    print("  Dash — Platform Mode")
+    print("=" * 60)
+    print()
+    print("The OpenHands platform extends Dash with:")
+    print("  🖥️  Terminal — psql, Python scripts, data analysis")
+    print("  📝  File Editor — browse/edit knowledge files")
+    print("  🌐  Browser — preview visualizations")
+    print("  🔒  Sandbox — isolated Docker runtime")
     print()
 
-    workspace = RemoteWorkspace(
-        host=OPENHANDS_HOST,
-        working_dir="/workspace",
-        api_key=OPENHANDS_API_KEY,
-    )
-
-    conversation = RemoteConversation(
-        agent=dash_platform,
-        workspace=workspace,
-    )
-    conversation.set_confirmation_policy(confirmation_policy)
-
+    # Check if the platform is running
     try:
-        while True:
-            try:
-                question = input("You: ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print("\nGoodbye!")
-                break
+        import httpx
 
-            if not question:
-                continue
-            if question.lower() in ("quit", "exit", "q"):
-                print("Goodbye!")
-                break
+        resp = httpx.get(OPENHANDS_URL, timeout=3, follow_redirects=True)
+        if resp.status_code == 200:
+            print(f"✅ OpenHands is running at {OPENHANDS_URL}")
+            print()
+            print("Opening in your browser...")
+            webbrowser.open(OPENHANDS_URL)
+            return
+    except Exception:
+        pass
 
-            conversation.send_message(question)
-            conversation.run()
-            response = get_agent_final_response(conversation.state.events)
-            print(f"\nDash: {response}\n")
-    finally:
-        try:
-            conversation.close()
-        except Exception:
-            logger.warning("Error closing conversation", exc_info=True)
+    # Not running — offer to start it
+    print(f"❌ OpenHands is not running at {OPENHANDS_URL}")
+    print()
+    print("Start it with:")
+    print()
+    print("  docker compose -f compose.platform.yaml up -d")
+    print()
+
+    if "--start" in sys.argv:
+        print("Starting...")
+        result = subprocess.run(
+            ["docker", "compose", "-f", "compose.platform.yaml", "up", "-d"],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        )
+        if result.returncode == 0:
+            print()
+            print(f"✅ Platform started! Opening {OPENHANDS_URL}")
+            webbrowser.open(OPENHANDS_URL)
+        else:
+            print("❌ Failed to start. Check Docker is running.")
+            sys.exit(1)
 
 
 if __name__ == "__main__":

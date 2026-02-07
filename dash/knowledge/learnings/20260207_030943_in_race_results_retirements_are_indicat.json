@@ -1,0 +1,9 @@
+{
+  "category": "data_pattern",
+  "description": "In race_results, retirements are indicated by time = 'DNF'. The position column rarely uses 'Ret'; DNFs often have position = 'NC' or even a numeric value. To count retirements (DNFs), filter on time = 'DNF' rather than position.",
+  "discovered_at": "2026-02-07T03:09:43.144029+00:00",
+  "tables_affected": [
+    "race_results"
+  ],
+  "example": "-- Count DNFs in 2020\nSELECT COUNT(*) FROM race_results WHERE year = 2020 AND time = 'DNF';"
+}

@@ -8,13 +8,12 @@ Dash is a self-learning data agent that delivers **insights, not just SQL result
 
 ```
 dash/
-├── agents.py             # Agent definitions (SDK mode + platform mode)
-├── platform.py           # Platform mode entry point (RemoteConversation)
+├── agents.py             # Agent definition (SDK mode)
+├── platform.py           # Platform mode launcher
 ├── mcp_config.example.json # Example MCP server configuration
 ├── paths.py              # Path constants
 ├── prompts/
 │   ├── system_prompt.j2          # SDK mode system prompt
-│   ├── system_prompt_platform.j2 # Platform mode system prompt (adds bash/file/browser)
 │   ├── security_policy.j2        # Security policy
 │   └── security_risk_assessment.j2 # Risk assessment template
 ├── knowledge/            # Knowledge files (tables, queries, business rules, learnings)
@@ -67,9 +66,9 @@ python -m dash --confirm                        # Enable confirmation for risky 
 python -m dash.agents                           # Test mode (runs sample query)
 python -m app.main                              # API server + chat UI → http://localhost:7777
 
-# Platform Mode (requires running OpenHands server)
+# Platform Mode (full OpenHands with bash, file editor, browser)
 docker compose -f compose.platform.yaml up -d   # Start OpenHands + DB
-python -m dash.platform                          # CLI via platform
+open http://localhost:3000                        # OpenHands web UI
 
 # Data & Knowledge
 python -m dash.scripts.load_data                # Load F1 sample data
@@ -101,7 +100,7 @@ Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk):
 | Security | `ConfirmRisky` | Confirmation for risky actions |
 | Persistence | `persistence_dir` | Save/resume conversations to disk |
 | Conversation | `Conversation` | State & lifecycle management |
-| Platform | `RemoteConversation` + `RemoteWorkspace` | Full server with bash, file editor, browser |
+| Platform | `.openhands_instructions` | Injects Dash context into OpenHands's coding agent |
 
 ### Custom Tools (registered via `register_tool`)
 

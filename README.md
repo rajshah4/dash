@@ -135,7 +135,9 @@ python -m dash
 
 ### Platform Mode (Full OpenHands)
 
-Run Dash on the full [OpenHands platform](https://docs.openhands.dev) for a richer experience:
+Run Dash on the full [OpenHands platform](https://docs.openhands.dev). This extends the standard OpenHands coding agent with all of Dash's context — the same 6 layers, injected via `.openhands_instructions` into the agent's system prompt.
+
+The idea: **a coding agent that already knows your database.**
 
 - 🖥️ **Terminal** — `psql` with formatted tabular output, Python scripts for analysis
 - 📝 **File Editor** — browse and edit knowledge files, save reports
@@ -149,9 +151,6 @@ docker compose -f compose.platform.yaml up -d
 
 # Open the web UI
 open http://localhost:3000
-
-# Or connect via CLI
-python -m dash.platform
 ```
 
 ## How It Works
@@ -168,7 +167,7 @@ Dash is built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/s
 | **Security** | `ConfirmRisky` confirmation policy for destructive actions |
 | **Persistence** | Save/resume conversations to disk |
 | **Tracing** | [Laminar](https://www.lmnr.ai) tracing (auto-enabled with `LMNR_PROJECT_API_KEY`) |
-| **Platform** | Full OpenHands server with bash, file editor, and browser (optional) |
+| **Platform** | `.openhands_instructions` injects Dash context into OpenHands's coding agent |
 
 ## Adding Knowledge
 

@@ -1,0 +1,9 @@
+{
+  "category": "type_gotcha",
+  "description": "drivers_championship.position is TEXT, not INTEGER. When filtering champions or positions, compare as strings (e.g., position = '1') rather than casting to integers.",
+  "discovered_at": "2026-02-07T03:14:34.065326+00:00",
+  "tables_affected": [
+    "drivers_championship"
+  ],
+  "example": "-- Count champions\nSELECT COUNT(*) FROM drivers_championship WHERE position = '1';"
+}

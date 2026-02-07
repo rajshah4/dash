@@ -1,13 +1,11 @@
 """
-Dash Agents
-===========
+Dash Agent (SDK Mode)
+=====================
 
-Defines the Dash data agent using the OpenHands SDK.
+Defines the Dash data agent using the OpenHands SDK for local execution.
 
-Two modes are available:
-  - **SDK mode** (default): lightweight, uses custom SQL tools only.
-  - **Platform mode**: runs on the full OpenHands server with bash, file
-    editing, and browser tools alongside the custom SQL tools.
+For platform mode (full OpenHands server), the context is injected via
+.openhands_instructions — see compose.platform.yaml.
 
 Six layers of context:
   1. Table Usage          — knowledge/tables/*.json → semantic model
@@ -44,10 +42,9 @@ from db import db_url
 
 logger = get_logger(__name__)
 
-# Paths to custom system prompts (replace the SDK's default coding-agent prompt)
+# Path to custom system prompt (replaces the SDK's default coding-agent prompt)
 PROMPT_DIR = Path(__file__).parent / "prompts"
 SYSTEM_PROMPT_FILE = str(PROMPT_DIR / "system_prompt.j2")
-SYSTEM_PROMPT_PLATFORM_FILE = str(PROMPT_DIR / "system_prompt_platform.j2")
 
 # ============================================================================
 # Register custom tools
@@ -203,23 +200,12 @@ dash = Agent(
 )
 
 # ============================================================================
-# Platform Agent (full OpenHands server — bash, file editing, browser + SQL)
+# Platform Mode
 # ============================================================================
-# When running on the OpenHands platform (via RemoteConversation), the server
-# provides additional tools (bash, file editor, browser). The platform agent
-# includes FinishTool and ThinkTool which the server's loop requires, and uses
-# a system prompt that teaches Dash to leverage bash for formatted SQL output,
-# Python scripts for analysis/charts, and file editing for knowledge curation.
-
-dash_platform = Agent(
-    llm=llm,
-    tools=_TOOLS,
-    agent_context=dash_context,
-    condenser=condenser,
-    system_prompt_filename=SYSTEM_PROMPT_PLATFORM_FILE,
-    mcp_config=mcp_config or {},
-    include_default_tools=["FinishTool", "ThinkTool"],
-)
+# In platform mode, the OpenHands server runs its own CodeAct agent with
+# bash, file editor, and browser. Dash's context is injected via
+# .openhands_instructions in the workspace root — no separate agent needed.
+# See compose.platform.yaml and .openhands_instructions.
 
 
 if __name__ == "__main__":

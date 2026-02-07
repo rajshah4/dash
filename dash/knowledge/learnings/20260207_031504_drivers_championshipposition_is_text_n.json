@@ -1,0 +1,9 @@
+{
+  "category": "type_gotcha",
+  "description": "drivers_championship.position is TEXT, not INTEGER. It can contain numeric strings ('1','2',...) and non-numeric values like 'DSQ','DNS','NC'. Use string comparisons (e.g., position = '1') and avoid casting. If numeric filtering is needed, first constrain with a regex.",
+  "discovered_at": "2026-02-07T03:15:04.370760+00:00",
+  "tables_affected": [
+    "drivers_championship"
+  ],
+  "example": "-- Correct champion filter\nSELECT COUNT(*) FROM drivers_championship WHERE position = '1';\n\n-- Safer numeric filter pattern\nSELECT * FROM drivers_championship\nWHERE position ~ '^[0-9]+$' AND CAST(position AS INTEGER) <= 3;"
+}
