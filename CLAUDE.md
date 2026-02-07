@@ -108,11 +108,11 @@ Conversations are saved to `.dash_sessions/` by default. In the CLI, each sessio
 
 | Layer | Source | Code |
 |-------|--------|------|
-| 1. Table Metadata | `dash/knowledge/tables/*.json` | `dash/context/semantic_model.py` |
+| 1. Table Usage | `dash/knowledge/tables/*.json` | `dash/context/semantic_model.py` |
 | 2. Human Annotations | `dash/knowledge/business/*.json` | `dash/context/business_rules.py` |
 | 3. Query Patterns | `dash/knowledge/queries/*.sql` | Loaded into instructions |
 | 4. Institutional Knowledge | MCP connectors (optional) | `dash/mcp_config.json` + SDK `mcp_config` |
-| 5. Memory | `save_validated_query` tool + condenser | `dash/tools/save_query.py` |
+| 5. Learnings | `save_validated_query` tool + condenser | `dash/tools/save_query.py` |
 | 6. Runtime Context | `introspect_schema` tool | `dash/tools/introspect.py` |
 
 ## Data Quality (F1 Dataset)
