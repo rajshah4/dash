@@ -101,6 +101,47 @@ Who won the most races in 2019?
 |------------------|------|
 | `Hamilton: 11` | Lewis Hamilton dominated 2019 with **11 wins out of 21 races**, more than double Bottas's 4 wins. This performance secured his sixth world championship. |
 
+## Two Modes
+
+Dash supports two deployment modes:
+
+### SDK Mode (Lightweight)
+
+Lightweight standalone deployment — custom SQL tools, FastAPI API, and a built-in chat UI. Great for validating logic, testing queries, and evaluating performance.
+
+```sh
+# Start DB + load data
+docker compose up -d dash-db
+python -m dash.scripts.load_data
+
+# Run the API server with chat UI
+python -m app.main       # → http://localhost:7777
+
+# Or use the interactive CLI
+python -m dash
+```
+
+### Platform Mode (Full OpenHands)
+
+Run Dash on the full [OpenHands platform](https://docs.openhands.dev) for a richer experience:
+
+- 🖥️ **Terminal** — `psql` with formatted tabular output, Python scripts for analysis
+- 📝 **File Editor** — browse and edit knowledge files, save reports
+- 🌐 **Browser** — preview generated visualizations (matplotlib, plotly)
+- 🔒 **Sandbox** — all execution runs in an isolated Docker container
+- 🐍 **Python** — go beyond SQL with pandas, scipy, matplotlib for charts and stats
+
+```sh
+# Start the OpenHands platform + database
+docker compose -f compose.platform.yaml up -d
+
+# Open the web UI
+open http://localhost:3000
+
+# Or connect via CLI
+python -m dash.platform
+```
+
 ## How It Works
 
 Dash is built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk):
@@ -115,6 +156,7 @@ Dash is built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/s
 | **Security** | `ConfirmRisky` confirmation policy for destructive actions |
 | **Persistence** | Save/resume conversations to disk |
 | **Tracing** | [Laminar](https://www.lmnr.ai) tracing (auto-enabled with `LMNR_PROJECT_API_KEY`) |
+| **Platform** | Full OpenHands server with bash, file editor, and browser (optional) |
 
 ## Adding Knowledge
 
@@ -195,10 +237,15 @@ python -m dash.scripts.load_knowledge
 docker compose up -d dash-db
 python -m dash.scripts.load_data
 
-# Run
+# SDK Mode
 python -m dash                          # Interactive CLI
 python -m dash "Who won in 2019?"       # One-shot query
-python -m app.main                      # API server (FastAPI)
+python -m app.main                      # API server + chat UI → http://localhost:7777
+
+# Platform Mode
+docker compose -f compose.platform.yaml up -d   # Start OpenHands server
+python -m dash.platform                          # CLI via platform
+# Or open http://localhost:3000 for the web UI
 
 # Evals
 python -m dash.evals.run_evals              # String matching
@@ -217,16 +264,21 @@ python -m dash.evals.run_evals -g -r -v     # Full evaluation
 | `DASH_MCP_CONFIG` | No | MCP config as inline JSON (or use `DASH_MCP_CONFIG_FILE`) |
 | `DASH_ENABLE_CONFIRMATION` | No | Enable security confirmation for risky actions (API) |
 | `DASH_PERSISTENCE_DIR` | No | Custom session storage directory (API) |
+| `OPENHANDS_HOST` | No | OpenHands server URL for platform mode (default: `http://localhost:3000`) |
+| `OPENHANDS_API_KEY` | No | API key for the OpenHands server (platform mode) |
 | `DB_*` | No | Database config (defaults to `ai`/`ai`/`ai` on localhost) |
 
 ## Deploy with Docker
 
 ```sh
-# Full stack (DB + API)
+# SDK Mode — DB + API with built-in chat UI
 docker compose up -d --build
-
-# Load data
 docker exec -it dash-api python -m dash.scripts.load_data
+# → http://localhost:8000
+
+# Platform Mode — Full OpenHands server with terminal, editor, browser
+docker compose -f compose.platform.yaml up -d
+# → http://localhost:3000 (OpenHands Web UI)
 ```
 
 ## Acknowledgements

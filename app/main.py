@@ -28,6 +28,8 @@ from os import getenv
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from openhands.sdk import Conversation
@@ -283,6 +285,22 @@ async def get_session(session_id: str) -> SessionInfo:
             raise HTTPException(status_code=400, detail="Invalid session_id")
 
     return SessionInfo(session_id=session_id, persistence_dir=str(PERSISTENCE_DIR))
+
+
+# ============================================================================
+# Chat UI — serve a lightweight web interface
+# ============================================================================
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.get("/")
+async def index():
+    """Serve the chat UI."""
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/health")

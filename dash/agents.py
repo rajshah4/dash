@@ -4,6 +4,11 @@ Dash Agents
 
 Defines the Dash data agent using the OpenHands SDK.
 
+Two modes are available:
+  - **SDK mode** (default): lightweight, uses custom SQL tools only.
+  - **Platform mode**: runs on the full OpenHands server with bash, file
+    editing, and browser tools alongside the custom SQL tools.
+
 Features:
 - Custom SQL tools (run_sql, introspect_schema, save_validated_query)
 - MCP (Model Context Protocol) for connecting to external tool servers
@@ -34,9 +39,10 @@ from db import db_url
 
 logger = get_logger(__name__)
 
-# Absolute path to our custom system prompt (replaces the SDK's coding-agent prompt)
+# Paths to custom system prompts (replace the SDK's default coding-agent prompt)
 PROMPT_DIR = Path(__file__).parent / "prompts"
 SYSTEM_PROMPT_FILE = str(PROMPT_DIR / "system_prompt.j2")
+SYSTEM_PROMPT_PLATFORM_FILE = str(PROMPT_DIR / "system_prompt_platform.j2")
 
 # ============================================================================
 # Register custom tools
@@ -161,22 +167,48 @@ def _load_mcp_config() -> dict | None:
 mcp_config = _load_mcp_config()
 
 # ============================================================================
-# Create Agent
+# Shared tool list
+# ============================================================================
+
+_TOOLS = [
+    Tool(name=RunSQLTool.name, params={"db_url": db_url}),
+    Tool(name=IntrospectSchemaTool.name, params={"db_url": db_url}),
+    Tool(name=SaveValidatedQueryTool.name, params={"queries_dir": str(QUERIES_DIR)}),
+]
+
+# ============================================================================
+# SDK Agent (lightweight — custom SQL tools only)
 # ============================================================================
 
 dash = Agent(
     llm=llm,
-    tools=[
-        Tool(name=RunSQLTool.name, params={"db_url": db_url}),
-        Tool(name=IntrospectSchemaTool.name, params={"db_url": db_url}),
-        Tool(name=SaveValidatedQueryTool.name, params={"queries_dir": str(QUERIES_DIR)}),
-    ],
+    tools=_TOOLS,
     agent_context=dash_context,
     condenser=condenser,
     system_prompt_filename=SYSTEM_PROMPT_FILE,
     mcp_config=mcp_config or {},
     include_default_tools=[],
 )
+
+# ============================================================================
+# Platform Agent (full OpenHands server — bash, file editing, browser + SQL)
+# ============================================================================
+# When running on the OpenHands platform (via RemoteConversation), the server
+# provides additional tools (bash, file editor, browser). The platform agent
+# includes FinishTool and ThinkTool which the server's loop requires, and uses
+# a system prompt that teaches Dash to leverage bash for formatted SQL output,
+# Python scripts for analysis/charts, and file editing for knowledge curation.
+
+dash_platform = Agent(
+    llm=llm,
+    tools=_TOOLS,
+    agent_context=dash_context,
+    condenser=condenser,
+    system_prompt_filename=SYSTEM_PROMPT_PLATFORM_FILE,
+    mcp_config=mcp_config or {},
+    include_default_tools=["FinishTool", "ThinkTool"],
+)
+
 
 if __name__ == "__main__":
     from openhands.sdk import Conversation

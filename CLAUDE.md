@@ -8,9 +8,15 @@ Dash is a self-learning data agent that delivers **insights, not just SQL result
 
 ```
 dash/
-├── agents.py             # Dash agent (LLM, tools, MCP, condenser, security)
+├── agents.py             # Agent definitions (SDK mode + platform mode)
+├── platform.py           # Platform mode entry point (RemoteConversation)
 ├── mcp_config.example.json # Example MCP server configuration
 ├── paths.py              # Path constants
+├── prompts/
+│   ├── system_prompt.j2          # SDK mode system prompt
+│   ├── system_prompt_platform.j2 # Platform mode system prompt (adds bash/file/browser)
+│   ├── security_policy.j2        # Security policy
+│   └── security_risk_assessment.j2 # Risk assessment template
 ├── knowledge/            # Knowledge files (tables, queries, business rules)
 │   ├── tables/           # Table metadata JSON files
 │   ├── queries/          # Validated SQL queries
@@ -31,7 +37,8 @@ dash/
     └── run_evals.py      # Run evaluations
 
 app/
-├── main.py               # API entry point (FastAPI) with persistence
+├── main.py               # API entry point (FastAPI) + chat UI
+├── static/index.html     # Built-in chat UI
 └── config.yaml           # Configuration
 
 db/
@@ -46,14 +53,18 @@ db/
 uv sync
 source .venv/bin/activate
 
-# Run
+# SDK Mode
 python -m dash                                  # Interactive CLI (persistent sessions)
 python -m dash "Who won in 2019?"               # One-shot query
 python -m dash --session <uuid>                 # Resume a previous session
 python -m dash --no-persist                     # Disable persistence
 python -m dash --confirm                        # Enable confirmation for risky actions
 python -m dash.agents                           # Test mode (runs sample query)
-python -m app.main                              # API server
+python -m app.main                              # API server + chat UI → http://localhost:7777
+
+# Platform Mode (requires running OpenHands server)
+docker compose -f compose.platform.yaml up -d   # Start OpenHands + DB
+python -m dash.platform                          # CLI via platform
 
 # Data & Knowledge
 python -m dash.scripts.load_data                # Load F1 sample data
@@ -83,6 +94,7 @@ Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk):
 | Security | `ConfirmRisky` | Confirmation for risky actions |
 | Persistence | `persistence_dir` | Save/resume conversations to disk |
 | Conversation | `Conversation` | State & lifecycle management |
+| Platform | `RemoteConversation` + `RemoteWorkspace` | Full server with bash, file editor, browser |
 
 ### Custom Tools (registered via `register_tool`)
 
