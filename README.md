@@ -8,7 +8,7 @@ Inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-i
 
 ```sh
 # Clone this repo
-git clone https://github.com/rajivshah/dash.git && cd dash
+git clone https://github.com/rajshah4/dash.git && cd dash
 
 # Set your LLM API key
 cp example.env .env
@@ -51,11 +51,12 @@ Dash solves this with **6 layers of grounded context**, a **self-learning loop**
 
 | Layer | Purpose | Source |
 |------|--------|--------|
-| **Table Usage** | Schema, columns, relationships | `knowledge/tables/*.json` |
-| **Human Annotations** | Metrics, definitions, and business rules | `knowledge/business/*.json` |
-| **Query Patterns** | SQL that is known to work | `knowledge/queries/*.sql` |
-| **Saved Queries** | Validated queries the agent saves for reuse | `save_validated_query` tool |
-| **Runtime Context** | Live schema changes | `introspect_schema` tool |
+| 1. **Table Usage** | Schema, columns, relationships | `knowledge/tables/*.json` |
+| 2. **Human Annotations** | Metrics, definitions, and business rules | `knowledge/business/*.json` |
+| 3. **Query Patterns** | SQL that is known to work | `knowledge/queries/*.sql` |
+| 4. **Runtime Context** | Live schema discovery and type checking | `introspect_schema` tool |
+| 5. **SQL Execution** | Run queries, interpret results, self-correct on errors | `run_sql` tool |
+| 6. **Saved Queries** | Validated queries the agent saves for reuse | `save_validated_query` tool |
 
 The agent retrieves relevant context at query time, then generates SQL grounded in patterns that already work.
 
@@ -102,15 +103,18 @@ Who won the most races in 2019?
 
 ## How It Works
 
-Dash is built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk) with three custom tools:
+Dash is built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk):
 
-| Tool | Purpose |
-|------|---------|
-| `run_sql` | Execute read-only SQL queries against PostgreSQL |
-| `introspect_schema` | Discover tables, columns, types, and sample data at runtime |
-| `save_validated_query` | Save proven queries for future reuse |
-
-The agent's behavior is configured via an `AgentContext` with a `Skill` that injects the semantic model, business rules, and instructions into the system prompt.
+| Component | Purpose |
+|-----------|---------|
+| **Custom Tools** | `run_sql`, `introspect_schema`, `save_validated_query` |
+| **MCP** | Connect to external tool servers via [Model Context Protocol](https://modelcontextprotocol.io/) |
+| **Custom System Prompt** | Data-agent prompt replacing the SDK's default coding-agent prompt |
+| **Agent Context** | Semantic model and business rules injected as a `Skill` |
+| **Condenser** | `LLMSummarizingCondenser` compresses long conversations |
+| **Security** | `ConfirmRisky` confirmation policy for destructive actions |
+| **Persistence** | Save/resume conversations to disk |
+| **Tracing** | [Laminar](https://www.lmnr.ai) tracing (auto-enabled with `LMNR_PROJECT_API_KEY`) |
 
 ## Adding Knowledge
 
@@ -209,6 +213,10 @@ python -m dash.evals.run_evals -g -r -v     # Full evaluation
 | `LLM_API_KEY` | Yes | API key for your LLM provider ([any LiteLLM provider](https://docs.litellm.ai/docs/providers)) |
 | `LLM_MODEL` | No | Model name (default: `openai/gpt-4.1`) |
 | `LLM_BASE_URL` | No | Custom API base URL |
+| `LMNR_PROJECT_API_KEY` | No | [Laminar](https://www.lmnr.ai) API key for tracing (auto-enabled) |
+| `DASH_MCP_CONFIG` | No | MCP config as inline JSON (or use `DASH_MCP_CONFIG_FILE`) |
+| `DASH_ENABLE_CONFIRMATION` | No | Enable security confirmation for risky actions (API) |
+| `DASH_PERSISTENCE_DIR` | No | Custom session storage directory (API) |
 | `DB_*` | No | Database config (defaults to `ai`/`ai`/`ai` on localhost) |
 
 ## Deploy with Docker
