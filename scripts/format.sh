@@ -2,7 +2,7 @@
 
 ############################################################################
 #
-#    Agno Workspace Formatter
+#    Dash Workspace Formatter
 #
 #    Usage: ./scripts/format.sh
 #

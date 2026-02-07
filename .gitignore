@@ -11,6 +11,7 @@ dist/
 *.egg-info/
 .eggs/
 *.egg
+dash.egg-info/
 
 # Test / coverage
 .pytest_cache/

@@ -2,7 +2,7 @@
 
 ############################################################################
 #
-#    Agno Workspace Validator
+#    Dash Workspace Validator
 #
 #    Usage: ./scripts/validate.sh
 #
