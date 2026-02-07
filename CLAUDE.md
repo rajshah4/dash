@@ -44,13 +44,19 @@ dash/
 
 app/
 ├── main.py               # API entry point (FastAPI) + chat UI
-├── static/index.html     # Built-in chat UI
 └── static/index.html     # SDK-mode chat UI
 
 skills/                   # Platform mode — auto-loaded into OpenHands agent
 ├── dash-agent.md         # Agent identity, DB connection, workflow
 ├── dash-schema.md        # Table metadata, data quality gotchas, SQL rules
 └── dash-sql-patterns.md  # Validated SQL templates, business rules
+
+scripts/                  # Top-level repo scripts
+├── cloud_api_demo.py     # Programmatic OpenHands Cloud/Server API demo
+├── venv_setup.sh         # Create .venv and install dependencies
+├── entrypoint.sh         # Docker entrypoint for SDK mode
+├── format.sh             # Code formatting (ruff)
+└── validate.sh           # Code validation (ruff + mypy)
 
 db/
 ├── session.py            # SQLAlchemy engine factory
