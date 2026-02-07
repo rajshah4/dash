@@ -1,9 +1,13 @@
-"""Save validated SQL queries tool."""
+"""Save validated SQL queries tool (Layer 3).
+
+Saves queries in the same tagged .sql format as curated patterns so they
+are loaded back into the prompt for future sessions.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -29,12 +33,11 @@ logger = logging.getLogger(__name__)
 class SaveValidatedQueryAction(Action):
     """Save a validated SQL query for future reference."""
 
-    name: str = Field(description='Short name for the query (e.g., "championship_wins_by_driver")')
+    name: str = Field(description='Short snake_case name for the query (e.g., "championship_wins_by_driver")')
     question: str = Field(description="The original user question this query answers")
     query: str = Field(description="The validated SQL query")
-    summary: str | None = Field(default=None, description="Brief description of what the query does")
+    description: str | None = Field(default=None, description="What the query does, gotchas it handles")
     tables_used: list[str] | None = Field(default=None, description="List of tables used in the query")
-    data_quality_notes: str | None = Field(default=None, description="Any data quality issues handled")
 
 
 class SaveValidatedQueryObservation(Observation):
@@ -51,7 +54,7 @@ DANGEROUS_KEYWORDS = ["drop", "delete", "truncate", "insert", "update", "alter",
 
 
 class SaveValidatedQueryExecutor(ToolExecutor[SaveValidatedQueryAction, SaveValidatedQueryObservation]):
-    """Save validated queries to a local JSON file."""
+    """Save validated queries as .sql files matching the curated format."""
 
     def __init__(self, queries_dir: Path) -> None:
         self.queries_dir = queries_dir
@@ -79,32 +82,58 @@ class SaveValidatedQueryExecutor(ToolExecutor[SaveValidatedQueryAction, SaveVali
                     f"Error: Query contains dangerous keyword: {kw}", is_error=True
                 )
 
-        payload: dict[str, Any] = {
-            "type": "validated_query",
-            "name": action.name.strip(),
-            "question": action.question.strip(),
-            "query": action.query.strip(),
-        }
-        if action.summary:
-            payload["summary"] = action.summary.strip()
+        # Sanitize name to snake_case
+        name = re.sub(r"[^a-z0-9_]", "_", action.name.strip().lower())
+        name = re.sub(r"_+", "_", name).strip("_")
+        if not name:
+            return SaveValidatedQueryObservation.from_text("Error: Invalid name.", is_error=True)
+
+        # Check if a query with this name already exists in any .sql file
+        if self._query_exists(name):
+            return SaveValidatedQueryObservation.from_text(
+                f"Query '{name}' already exists. Skipped."
+            )
+
+        # Build the tagged SQL format matching knowledge/queries/*.sql
+        desc_text = action.description or action.question
+        desc_lines = "\n".join(f"-- {line}" for line in desc_text.strip().splitlines())
         if action.tables_used:
-            payload["tables_used"] = action.tables_used
-        if action.data_quality_notes:
-            payload["data_quality_notes"] = action.data_quality_notes.strip()
+            desc_lines += f"\n-- Tables: {', '.join(action.tables_used)}"
+
+        content = (
+            f"\n\n-- <query name>{name}</query name>\n"
+            f"-- <query description>\n"
+            f"{desc_lines}\n"
+            f"-- </query description>\n"
+            f"-- <query>\n"
+            f"{action.query.strip()}\n"
+            f"-- </query>\n"
+        )
 
         try:
-            filename = action.name.strip().replace(" ", "_").lower() + ".json"
-            filepath = self.queries_dir / filename
-            if filepath.exists():
-                return SaveValidatedQueryObservation.from_text(
-                    f"Query '{action.name}' already exists. Skipped."
-                )
-            with open(filepath, "w") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            return SaveValidatedQueryObservation.from_text(f"Saved query '{action.name}' to {filepath}.")
+            # Append to a saved_queries.sql file (keeps all saved queries together)
+            filepath = self.queries_dir / "saved_queries.sql"
+            with open(filepath, "a") as f:
+                f.write(content)
+            return SaveValidatedQueryObservation.from_text(
+                f"Saved query '{name}' to {filepath}.\n"
+                f"This query will be available as a pattern in future sessions."
+            )
         except OSError as e:
             logger.error(f"Failed to save query: {e}")
             return SaveValidatedQueryObservation.from_text(f"Error: {e}", is_error=True)
+
+    def _query_exists(self, name: str) -> bool:
+        """Check if a query with this name already exists in any .sql file."""
+        pattern = re.compile(rf"<query name>\s*{re.escape(name)}\s*</query name>")
+        for filepath in self.queries_dir.glob("*.sql"):
+            try:
+                content = filepath.read_text()
+                if pattern.search(content):
+                    return True
+            except OSError:
+                pass
+        return False
 
     def close(self) -> None:
         pass
@@ -118,8 +147,16 @@ class SaveValidatedQueryExecutor(ToolExecutor[SaveValidatedQueryAction, SaveVali
 TOOL_DESCRIPTION = """\
 Save a validated SQL query to the knowledge base for future reuse.
 
-Call ONLY after the query has executed successfully and the user confirmed results are correct.
-Saved queries will be available in the knowledge directory for future reference.
+Call ONLY after the query has executed successfully and the user confirmed
+results are correct. Saved queries become patterns that future sessions can
+reference — they are loaded into the system prompt automatically.
+
+Parameters:
+- name: Short snake_case name (e.g., "driver_wins_by_year")
+- question: The original user question
+- query: The validated SQL
+- description: What it does and any gotchas handled
+- tables_used: Tables referenced in the query
 """
 
 

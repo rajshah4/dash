@@ -17,20 +17,25 @@ dash/
 │   ├── system_prompt_platform.j2 # Platform mode system prompt (adds bash/file/browser)
 │   ├── security_policy.j2        # Security policy
 │   └── security_risk_assessment.j2 # Risk assessment template
-├── knowledge/            # Knowledge files (tables, queries, business rules)
-│   ├── tables/           # Table metadata JSON files
-│   ├── queries/          # Validated SQL queries
-│   └── business/         # Business rules and metrics
+├── knowledge/            # Knowledge files (tables, queries, business rules, learnings)
+│   ├── tables/           # Table metadata JSON files (Layer 1)
+│   ├── business/         # Business rules and metrics (Layer 2)
+│   ├── queries/          # Validated SQL queries (Layer 3)
+│   └── learnings/        # Persistent discoveries from sessions (Layer 5)
 ├── context/
-│   ├── semantic_model.py # Layer 1: Table usage
-│   └── business_rules.py # Layer 2: Business rules
+│   ├── semantic_model.py # Layer 1: Table usage loader
+│   ├── business_rules.py # Layer 2: Business rules loader
+│   ├── query_patterns.py # Layer 3: Query patterns loader
+│   └── learnings.py      # Layer 5: Persistent learnings loader
 ├── tools/
-│   ├── sql.py            # RunSQLTool (custom OpenHands tool)
-│   ├── introspect.py     # IntrospectSchemaTool (custom OpenHands tool)
-│   └── save_query.py     # SaveValidatedQueryTool (custom OpenHands tool)
+│   ├── sql.py            # RunSQLTool — execute read-only SQL
+│   ├── introspect.py     # IntrospectSchemaTool — discover tables/columns
+│   ├── save_query.py     # SaveValidatedQueryTool — save queries as .sql patterns
+│   └── save_learning.py  # SaveLearningTool — save schema quirks/discoveries
 ├── scripts/
 │   ├── load_data.py      # Load F1 sample data
-│   └── load_knowledge.py # Validate knowledge files
+│   ├── load_knowledge.py # Validate knowledge files
+│   └── check_schema.py   # Schema drift detection (Layer 1 safety check)
 └── evals/
     ├── test_cases.py     # Test cases with golden SQL
     ├── grader.py         # LLM-based response grader
@@ -69,6 +74,8 @@ python -m dash.platform                          # CLI via platform
 # Data & Knowledge
 python -m dash.scripts.load_data                # Load F1 sample data
 python -m dash.scripts.load_knowledge           # Validate knowledge files
+python -m dash.scripts.check_schema             # Check schema drift (knowledge vs live DB)
+python -m dash.scripts.check_schema --fix       # Auto-create missing knowledge files
 
 # Evaluations
 python -m dash.evals.run_evals                  # Run all evals (string matching)
@@ -87,7 +94,7 @@ Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk):
 |-----------|-------------------|------|
 | Agent | `Agent` | Reasoning loop with LLM + tools |
 | LLM | `LLM` | Model integration (any LiteLLM provider) |
-| Tools | `ToolDefinition` | Custom SQL, introspect, save tools |
+| Tools | `ToolDefinition` | Custom SQL, introspect, save, learn tools |
 | MCP | `mcp_config` | Connect to external MCP tool servers |
 | Context | `AgentContext` + `Skill` | Instructions & knowledge injection |
 | Condenser | `LLMSummarizingCondenser` | Compress long conversations |
@@ -102,7 +109,27 @@ Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk):
 |------|-------|---------|
 | `run_sql` | `RunSQLTool` | Execute read-only SQL queries |
 | `introspect_schema` | `IntrospectSchemaTool` | Discover tables, columns, types |
-| `save_validated_query` | `SaveValidatedQueryTool` | Save reusable queries to files |
+| `save_validated_query` | `SaveValidatedQueryTool` | Save reusable queries as .sql patterns |
+| `save_learning` | `SaveLearningTool` | Save schema quirks, type gotchas, discoveries |
+
+### Self-Learning Loop
+
+The agent improves across sessions via two persistent knowledge tools:
+
+1. **`save_validated_query`** — saves working SQL in the same tagged `.sql` format as curated patterns. These are loaded back into the prompt for future sessions via `dash/context/query_patterns.py`.
+2. **`save_learning`** — saves discovered patterns (schema quirks, type gotchas, error fixes) as JSON files. These are loaded into the prompt via `dash/context/learnings.py`.
+
+Both are loaded at startup and injected as a `Skill` into the agent's context. The condenser further preserves important context within a single session.
+
+### Schema Drift Detection
+
+Run `python -m dash.scripts.check_schema` to compare `knowledge/tables/*.json` against the live database. Detects:
+- Tables in knowledge but missing from DB
+- New tables in DB without knowledge files
+- Column additions/removals
+- Type mismatches (with fuzzy matching)
+
+Use `--fix` to auto-generate knowledge files for new tables.
 
 ### Condenser
 
@@ -122,10 +149,14 @@ Conversations are saved to `.dash_sessions/` by default. In the CLI, each sessio
 |-------|--------|------|
 | 1. Table Usage | `dash/knowledge/tables/*.json` | `dash/context/semantic_model.py` |
 | 2. Human Annotations | `dash/knowledge/business/*.json` | `dash/context/business_rules.py` |
-| 3. Query Patterns | `dash/knowledge/queries/*.sql` | Loaded into instructions |
+| 3. Query Patterns | `dash/knowledge/queries/*.sql` | `dash/context/query_patterns.py` |
 | 4. Institutional Knowledge | MCP connectors (optional) | `dash/mcp_config.json` + SDK `mcp_config` |
-| 5. Learnings | `save_validated_query` tool + condenser | `dash/tools/save_query.py` |
+| 5. Learnings | `dash/knowledge/learnings/*.json` + `save_learning` tool | `dash/context/learnings.py` |
 | 6. Runtime Context | `introspect_schema` tool | `dash/tools/introspect.py` |
+
+Layers 1-3 and 5 are loaded at startup into the agent's `Skill` context.
+Layer 4 is provided at runtime via MCP tool servers.
+Layer 6 is provided at runtime via the `introspect_schema` tool.
 
 ## Data Quality (F1 Dataset)
 

@@ -55,10 +55,10 @@ Dash solves this with **6 layers of grounded context**, a **self-learning loop**
 | 2. **Human Annotations** | Metrics, definitions, and business rules | `knowledge/business/*.json` |
 | 3. **Query Patterns** | SQL that is known to work | `knowledge/queries/*.sql` |
 | 4. **Institutional Knowledge** | Docs, wikis, external references | MCP connectors (optional) |
-| 5. **Learnings** | Error patterns and discovered fixes | `save_validated_query` tool + condenser |
+| 5. **Learnings** | Error patterns and discovered fixes | `save_learning` tool → `knowledge/learnings/*.json` |
 | 6. **Runtime Context** | Live schema changes | `introspect_schema` tool |
 
-The agent retrieves relevant context at query time, then generates SQL grounded in patterns that already work.
+Layers 1-3 and 5 are loaded at startup into the agent's context. Layer 4 connects at runtime via MCP. Layer 6 discovers live schema on demand.
 
 ## The Self-Learning Loop
 
@@ -67,9 +67,9 @@ Dash improves without retraining or fine-tuning. We call this gpu-poor continuou
 ```
 User Question
      ↓
-Load Knowledge (semantic model + business rules)
+Load Knowledge (semantic model + business rules + query patterns + learnings)
      ↓
-Reason about intent
+Reason about intent — check existing patterns first
      ↓
 Generate grounded SQL
      ↓
@@ -80,15 +80,27 @@ Execute and interpret
 Success    Error
  ↓         ↓
  ↓         Introspect schema → Fix → Retry
+ ↓                                    ↓
+Return insight                   save_learning (schema quirk)
  ↓
-Return insight
- ↓
-Optionally save as validated query
+Optionally save_validated_query
 ```
+
+Two tools drive the learning loop:
+
+- **`save_validated_query`** — saves working SQL as `.sql` patterns (same format as curated queries). Loaded into the prompt for all future sessions.
+- **`save_learning`** — saves discovered patterns (schema quirks, type gotchas, error fixes) as JSON. Loaded into the prompt for all future sessions.
 
 **Knowledge** is curated — validated queries and business context you want the agent to build on.
 
-**Runtime learning** is discovered — when a query fails because `position` is TEXT not INTEGER, the agent introspects the schema and self-corrects. Validated queries are saved for future reuse.
+**Learnings** are discovered — when a query fails because `position` is TEXT not INTEGER, the agent introspects, self-corrects, and saves the discovery so it never makes the same mistake again.
+
+### Schema Drift Detection
+
+```sh
+python -m dash.scripts.check_schema          # compare knowledge vs live DB
+python -m dash.scripts.check_schema --fix    # auto-create missing knowledge files
+```
 
 ## Insights, Not Just Rows
 
@@ -148,7 +160,7 @@ Dash is built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/s
 
 | Component | Purpose |
 |-----------|---------|
-| **Custom Tools** | `run_sql`, `introspect_schema`, `save_validated_query` |
+| **Custom Tools** | `run_sql`, `introspect_schema`, `save_validated_query`, `save_learning` |
 | **MCP** | Connect to external tool servers via [Model Context Protocol](https://modelcontextprotocol.io/) |
 | **Custom System Prompt** | Data-agent prompt replacing the SDK's default coding-agent prompt |
 | **Agent Context** | Semantic model and business rules injected as a `Skill` |
@@ -164,9 +176,10 @@ Dash works best when it understands how your organization talks about data.
 
 ```
 knowledge/
-├── tables/      # Table meaning and caveats
-├── queries/     # Proven SQL patterns
-└── business/    # Metrics and language
+├── tables/      # Table meaning and caveats (Layer 1)
+├── business/    # Metrics and language (Layer 2)
+├── queries/     # Proven SQL patterns (Layer 3)
+└── learnings/   # Discovered patterns from sessions (Layer 5)
 ```
 
 ### Table Metadata

@@ -9,11 +9,13 @@ Two modes are available:
   - **Platform mode**: runs on the full OpenHands server with bash, file
     editing, and browser tools alongside the custom SQL tools.
 
-Features:
-- Custom SQL tools (run_sql, introspect_schema, save_validated_query)
-- MCP (Model Context Protocol) for connecting to external tool servers
-- LLM-summarizing condenser for long conversations
-- Security confirmation policy for risky actions
+Six layers of context:
+  1. Table Usage          — knowledge/tables/*.json → semantic model
+  2. Human Annotations    — knowledge/business/*.json → business rules
+  3. Query Patterns       — knowledge/queries/*.sql → validated SQL patterns
+  4. Institutional Knowledge — MCP connectors (optional)
+  5. Learnings            — knowledge/learnings/*.json → persistent discoveries
+  6. Runtime Context      — introspect_schema tool → live schema inspection
 
 Test: python -m dash.agents
 """
@@ -30,9 +32,12 @@ from openhands.sdk.security.confirmation_policy import ConfirmRisky
 from openhands.sdk.security.risk import SecurityRisk
 
 from dash.context.business_rules import BUSINESS_CONTEXT
+from dash.context.learnings import LEARNINGS_CONTEXT
+from dash.context.query_patterns import QUERY_PATTERNS_CONTEXT
 from dash.context.semantic_model import SEMANTIC_MODEL_STR
-from dash.paths import QUERIES_DIR
+from dash.paths import LEARNINGS_DIR, QUERIES_DIR
 from dash.tools.introspect import IntrospectSchemaTool
+from dash.tools.save_learning import SaveLearningTool
 from dash.tools.save_query import SaveValidatedQueryTool
 from dash.tools.sql import RunSQLTool
 from db import db_url
@@ -51,6 +56,7 @@ SYSTEM_PROMPT_PLATFORM_FILE = str(PROMPT_DIR / "system_prompt_platform.j2")
 register_tool(RunSQLTool.name, RunSQLTool)
 register_tool(IntrospectSchemaTool.name, IntrospectSchemaTool)
 register_tool(SaveValidatedQueryTool.name, SaveValidatedQueryTool)
+register_tool(SaveLearningTool.name, SaveLearningTool)
 
 # ============================================================================
 # LLM Configuration
@@ -88,17 +94,22 @@ confirmation_policy = ConfirmRisky(
 )
 
 # ============================================================================
-# Instructions (injected as a Skill)
+# Domain Knowledge — all 6 layers assembled into a single skill
 # ============================================================================
+# Layer 1: Table Usage (semantic model)
+# Layer 2: Human Annotations (business rules, metrics, gotchas)
+# Layer 3: Query Patterns (validated SQL that works)
+# Layer 5: Learnings (persistent discoveries from previous sessions)
+# (Layer 4: Institutional Knowledge is handled by MCP at runtime)
+# (Layer 6: Runtime Context is handled by introspect_schema at runtime)
 
-DOMAIN_KNOWLEDGE = f"""\
-## SEMANTIC MODEL
-
-{SEMANTIC_MODEL_STR}
----
-
-{BUSINESS_CONTEXT}\
-"""
+_sections = [
+    f"## SEMANTIC MODEL\n\n{SEMANTIC_MODEL_STR}" if SEMANTIC_MODEL_STR else "",
+    BUSINESS_CONTEXT,
+    QUERY_PATTERNS_CONTEXT,
+    LEARNINGS_CONTEXT,
+]
+DOMAIN_KNOWLEDGE = "\n---\n\n".join(s for s in _sections if s)
 
 # ============================================================================
 # Agent Context (provides the Dash skill/instructions)
@@ -107,7 +118,7 @@ DOMAIN_KNOWLEDGE = f"""\
 dash_skill = Skill(
     name="dash-data-analyst",
     content=DOMAIN_KNOWLEDGE,
-    description="Semantic model and business rules for the F1 database",
+    description="Semantic model, business rules, validated query patterns, and learnings for the F1 database",
 )
 
 dash_context = AgentContext(
@@ -115,7 +126,7 @@ dash_context = AgentContext(
 )
 
 # ============================================================================
-# MCP Configuration (optional)
+# MCP Configuration (optional — Layer 4: Institutional Knowledge)
 # ============================================================================
 # Connect to external MCP tool servers. Configure via:
 #   1. DASH_MCP_CONFIG env var (JSON string)
@@ -174,6 +185,7 @@ _TOOLS = [
     Tool(name=RunSQLTool.name, params={"db_url": db_url}),
     Tool(name=IntrospectSchemaTool.name, params={"db_url": db_url}),
     Tool(name=SaveValidatedQueryTool.name, params={"queries_dir": str(QUERIES_DIR)}),
+    Tool(name=SaveLearningTool.name, params={"learnings_dir": str(LEARNINGS_DIR)}),
 ]
 
 # ============================================================================
