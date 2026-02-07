@@ -49,14 +49,14 @@ Dash solves this with **6 layers of grounded context**, a **self-learning loop**
 
 ## The Six Layers of Context
 
-| Layer | Purpose | Source |
-|------|--------|--------|
-| 1. **Table Usage** | Schema, columns, relationships | `knowledge/tables/*.json` |
-| 2. **Human Annotations** | Metrics, definitions, and business rules | `knowledge/business/*.json` |
-| 3. **Query Patterns** | SQL that is known to work | `knowledge/queries/*.sql` |
-| 4. **Runtime Context** | Live schema discovery and type checking | `introspect_schema` tool |
-| 5. **SQL Execution** | Run queries, interpret results, self-correct on errors | `run_sql` tool |
-| 6. **Saved Queries** | Validated queries the agent saves for reuse | `save_validated_query` tool |
+| Layer | Purpose | Implementation |
+|-------|---------|----------------|
+| 1. **Table Metadata** | Schema, columns, types | `knowledge/tables/*.json` |
+| 2. **Human Annotations** | Business rules, gotchas | `knowledge/business/*.json` |
+| 3. **Query Patterns** | Validated SQL | `knowledge/queries/*.sql` |
+| 4. **Institutional Knowledge** | External context | MCP connectors (optional) |
+| 5. **Memory** | Corrections, preferences | `save_validated_query` tool + condenser |
+| 6. **Runtime Context** | Live schema inspection | `introspect_schema` tool |
 
 The agent retrieves relevant context at query time, then generates SQL grounded in patterns that already work.
 
