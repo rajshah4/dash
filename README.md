@@ -229,8 +229,13 @@ docker compose up -d --build
 docker exec -it dash-api python -m dash.scripts.load_data
 ```
 
+## Acknowledgements
+
+This repo is based on the [Agno data agent template](https://github.com/agno-agi/agentos-railway-template) by [Ashpreet Bedi](https://www.ashpreetbedi.com), refactored to use the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk). The 6-layer architecture and self-learning approach are inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-in-house-data-agent/).
+
 ## Further Reading
 
 - [OpenAI's In-House Data Agent](https://openai.com/index/inside-our-in-house-data-agent/) — the inspiration
 - [Self-Improving SQL Agent](https://www.ashpreetbedi.com/articles/sql-agent) — deep dive on an earlier architecture
+- [Agno Data Agent Template](https://github.com/agno-agi/agentos-railway-template) — the original Agno implementation
 - [OpenHands SDK Docs](https://docs.openhands.dev/sdk) — the framework Dash is built on
