@@ -1,30 +1,31 @@
 # Dash
 
-Dash is a **self-learning data agent** that grounds its answers in **6 layers of context** and improves with every run. Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk).
+Dash is a **self-learning data agent** that grounds its answers in **6 layers of context** and improves with every run. Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk) and deployable on the [OpenHands Platform](https://docs.openhands.dev).
 
 Inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-in-house-data-agent/).
 
 ## Quick Start
 
+### SDK Mode (fastest)
+
 ```sh
-# Clone this repo
 git clone https://github.com/rajshah4/dash.git && cd dash
-
-# Set your LLM API key
-cp example.env .env
-# Edit .env with your API key (any LiteLLM-supported provider works)
-
-# Start the database
+cp example.env .env          # Add your LLM API key
 docker compose up -d dash-db
-
-# Setup and activate virtual environment
 ./scripts/venv_setup.sh && source .venv/bin/activate
-
-# Load sample data
 python -m dash.scripts.load_data
+python -m dash               # Interactive CLI
+```
 
-# Run Dash
-python -m dash
+### Platform Mode (full OpenHands UI)
+
+```sh
+git clone https://github.com/rajshah4/dash.git && cd dash
+cp example.env .env
+docker compose -f compose.platform.yaml build dash-sandbox  # Custom sandbox with psql
+docker compose -f compose.platform.yaml up -d
+python -m dash.scripts.load_data
+open http://localhost:3000    # Configure your LLM in Settings, then chat
 ```
 
 **Try it** (sample F1 dataset):
@@ -35,7 +36,7 @@ python -m dash
 
 ## Why Text-to-SQL Breaks in Practice
 
-Our goal is simple: ask a question in english, get a correct, meaningful answer. But raw LLMs writing SQL hit a wall fast:
+Our goal is simple: ask a question in English, get a correct, meaningful answer. But raw LLMs writing SQL hit a wall fast:
 
 - **Schemas lack meaning.**
 - **Types are misleading.**
@@ -49,16 +50,20 @@ Dash solves this with **6 layers of grounded context**, a **self-learning loop**
 
 ## The Six Layers of Context
 
-| Layer | Purpose | Implementation |
-|-------|---------|----------------|
-| 1. **Table Usage** | Schema, columns, relationships | `knowledge/tables/*.json` |
-| 2. **Human Annotations** | Metrics, definitions, and business rules | `knowledge/business/*.json` |
-| 3. **Query Patterns** | SQL that is known to work | `knowledge/queries/*.sql` |
-| 4. **Institutional Knowledge** | Docs, wikis, external references | MCP connectors (optional) |
-| 5. **Learnings** | Error patterns and discovered fixes | `save_learning` tool → `knowledge/learnings/*.json` |
-| 6. **Runtime Context** | Live schema changes | `introspect_schema` tool |
+This architecture follows [OpenAI's approach to building their in-house data agent](https://openai.com/index/inside-our-in-house-data-agent/). Each layer adds context that makes SQL generation more reliable:
 
-Layers 1-3 and 5 are loaded at startup into the agent's context. Layer 4 connects at runtime via MCP. Layer 6 discovers live schema on demand.
+| Layer | Purpose | SDK Mode | Platform Mode |
+|-------|---------|----------|---------------|
+| 1. **Table Usage** | Schema, columns, types, relationships | `knowledge/tables/*.json` → loaded into prompt via `semantic_model.py` | `skills/dash-schema.md` → auto-injected as a skill |
+| 2. **Human Annotations** | Metrics, definitions, business rules | `knowledge/business/*.json` → loaded via `business_rules.py` | `skills/dash-sql-patterns.md` (business rules section) |
+| 3. **Query Patterns** | SQL that is known to work | `knowledge/queries/*.sql` → loaded via `query_patterns.py` | `skills/dash-sql-patterns.md` (validated queries) |
+| 4. **Institutional Knowledge** | Docs, wikis, external references | MCP connectors (optional) | MCP or `psql` + Python in sandbox |
+| 5. **Learnings** | Error patterns and discovered fixes | `save_learning` tool → `knowledge/learnings/*.json` | Agent saves to `knowledge/` via file editor |
+| 6. **Runtime Context** | Live schema on demand | `introspect_schema` tool | `psql -c "\d table_name"` in terminal |
+
+**SDK Mode**: Layers 1-3 and 5 are loaded at startup into the agent's prompt as a `Skill`. Layer 4 connects via MCP. Layer 6 discovers live schema on demand via a custom tool.
+
+**Platform Mode**: All 6 layers are delivered to OpenHands's coding agent via **skills** — markdown files mounted into the server's `/app/skills/` directory and auto-injected into every conversation. The agent uses `psql` (pre-installed in a custom sandbox image) and Python for queries and analysis.
 
 ## The Self-Learning Loop
 
@@ -115,59 +120,63 @@ Who won the most races in 2019?
 
 ## Two Modes
 
-Dash supports two deployment modes:
+Dash supports two deployment modes — use SDK mode for quick iteration and testing, Platform mode for the full experience:
 
 ### SDK Mode (Lightweight)
 
-Lightweight standalone deployment — custom SQL tools, FastAPI API, and a built-in chat UI. Great for validating logic, testing queries, and evaluating performance.
+Standalone deployment with custom SQL tools, a FastAPI API, and a built-in chat UI. Great for validating queries and evaluating agent performance.
 
 ```sh
-# Start DB + load data
 docker compose up -d dash-db
 python -m dash.scripts.load_data
-
-# Run the API server with chat UI
-python -m app.main       # → http://localhost:7777
-
-# Or use the interactive CLI
-python -m dash
+python -m app.main       # → http://localhost:7777 (chat UI + API)
+python -m dash           # Interactive CLI
 ```
+
+The 6 layers are loaded directly into the agent's prompt. Custom tools handle SQL execution, schema introspection, and knowledge persistence.
 
 ### Platform Mode (Full OpenHands)
 
-Run Dash on the full [OpenHands platform](https://docs.openhands.dev). This extends the standard OpenHands coding agent with all of Dash's context — the same 6 layers, injected via `.openhands_instructions` into the agent's system prompt.
+Run Dash on the [OpenHands platform](https://docs.openhands.dev). The standard OpenHands coding agent is extended with Dash's 6 layers of context via **auto-loaded skills**.
 
-The idea: **a coding agent that already knows your database.**
+**The idea: a coding agent that already knows your database.**
 
-- 🖥️ **Terminal** — `psql` with formatted tabular output, Python scripts for analysis
-- 📝 **File Editor** — browse and edit knowledge files, save reports
-- 🌐 **Browser** — preview generated visualizations (matplotlib, plotly)
-- 🔒 **Sandbox** — all execution runs in an isolated Docker container
+- 🖥️ **Terminal** — `psql` pre-installed in the sandbox for formatted tabular output
+- 📝 **File Editor** — browse knowledge files, save reports and learnings
 - 🐍 **Python** — go beyond SQL with pandas, scipy, matplotlib for charts and stats
+- 🌐 **Browser** — preview generated visualizations
+- 🔒 **Sandbox** — all execution runs in an isolated Docker container
 
 ```sh
-# Start the OpenHands platform + database
+docker compose -f compose.platform.yaml build dash-sandbox  # Once: custom sandbox with psql
 docker compose -f compose.platform.yaml up -d
-
-# Open the web UI
-open http://localhost:3000
+python -m dash.scripts.load_data
+open http://localhost:3000   # Configure LLM in Settings, then chat
 ```
+
+Context is delivered via three skill files mounted into the OpenHands server:
+
+| Skill | Content |
+|-------|---------|
+| `skills/dash-agent.md` | Agent identity, DB connection, workflow, insight guidelines |
+| `skills/dash-schema.md` | Table metadata, data quality gotchas, SQL rules |
+| `skills/dash-sql-patterns.md` | Validated query templates, business rules |
 
 ## How It Works
 
 Dash is built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk):
 
-| Component | Purpose |
-|-----------|---------|
-| **Custom Tools** | `run_sql`, `introspect_schema`, `save_validated_query`, `save_learning` |
-| **MCP** | Connect to external tool servers via [Model Context Protocol](https://modelcontextprotocol.io/) |
-| **Custom System Prompt** | Data-agent prompt replacing the SDK's default coding-agent prompt |
-| **Agent Context** | Semantic model and business rules injected as a `Skill` |
-| **Condenser** | `LLMSummarizingCondenser` compresses long conversations |
-| **Security** | `ConfirmRisky` confirmation policy for destructive actions |
-| **Persistence** | Save/resume conversations to disk |
-| **Tracing** | [Laminar](https://www.lmnr.ai) tracing (auto-enabled with `LMNR_PROJECT_API_KEY`) |
-| **Platform** | `.openhands_instructions` injects Dash context into OpenHands's coding agent |
+| Component | SDK Mode | Platform Mode |
+|-----------|----------|---------------|
+| **Agent** | Custom `Agent` with data-agent system prompt | OpenHands CodeAct agent + Dash skills |
+| **Tools** | `run_sql`, `introspect_schema`, `save_validated_query`, `save_learning` | Built-in `bash` (psql), `file_editor`, `browser` |
+| **Context Injection** | Layers loaded as `Skill` + `AgentContext` | Skills mounted into `/app/skills/` (auto-loaded) |
+| **MCP** | External tool servers via [Model Context Protocol](https://modelcontextprotocol.io/) | Same (optional) |
+| **Condenser** | `LLMSummarizingCondenser` compresses long conversations | Handled by platform |
+| **Security** | `ConfirmRisky` confirmation for destructive actions | Sandbox isolation |
+| **Persistence** | Save/resume conversations to disk | Built into OpenHands server |
+| **Tracing** | [Laminar](https://www.lmnr.ai) (auto-enabled with `LMNR_PROJECT_API_KEY`) | Same |
+| **Sandbox** | N/A (runs locally) | Docker-isolated execution |
 
 ## Adding Knowledge
 
@@ -179,6 +188,11 @@ knowledge/
 ├── business/    # Metrics and language (Layer 2)
 ├── queries/     # Proven SQL patterns (Layer 3)
 └── learnings/   # Discovered patterns from sessions (Layer 5)
+
+skills/           # Platform mode — auto-loaded into OpenHands agent
+├── dash-agent.md       # Agent identity + workflow
+├── dash-schema.md      # Table metadata + data quality gotchas
+└── dash-sql-patterns.md # Validated SQL + business rules
 ```
 
 ### Table Metadata
@@ -255,14 +269,18 @@ python -m dash "Who won in 2019?"       # One-shot query
 python -m app.main                      # API server + chat UI → http://localhost:7777
 
 # Platform Mode
-docker compose -f compose.platform.yaml up -d   # Start OpenHands server
-python -m dash.platform                          # CLI via platform
-# Or open http://localhost:3000 for the web UI
+docker compose -f compose.platform.yaml build dash-sandbox   # Once
+docker compose -f compose.platform.yaml up -d
+open http://localhost:3000              # Configure LLM in Settings, then chat
 
-# Evals
+# Evals (SDK mode)
 python -m dash.evals.run_evals              # String matching
 python -m dash.evals.run_evals -g           # LLM grader
 python -m dash.evals.run_evals -g -r -v     # Full evaluation
+
+# Schema drift check
+python -m dash.scripts.check_schema          # Detect knowledge vs DB mismatches
+python -m dash.scripts.check_schema --fix    # Auto-generate missing knowledge files
 ```
 
 ## Environment Variables
@@ -288,14 +306,16 @@ docker compose up -d --build
 docker exec -it dash-api python -m dash.scripts.load_data
 # → http://localhost:8000
 
-# Platform Mode — Full OpenHands server with terminal, editor, browser
+# Platform Mode — Full OpenHands with terminal, file editor, sandbox
+docker compose -f compose.platform.yaml build dash-sandbox  # Once: custom image with psql
 docker compose -f compose.platform.yaml up -d
-# → http://localhost:3000 (OpenHands Web UI)
+python -m dash.scripts.load_data
+# → http://localhost:3000 (configure LLM in Settings first)
 ```
 
 ## Acknowledgements
 
-This repo is based on [agno-agi/dash](https://github.com/agno-agi/dash) by [Ashpreet Bedi](https://www.ashpreetbedi.com), refactored to use the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk). The 6-layer architecture and self-learning approach are inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-in-house-data-agent/).
+This repo is based on [agno-agi/dash](https://github.com/agno-agi/dash) by [Ashpreet Bedi](https://www.ashpreetbedi.com), refactored to use the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk) and the [OpenHands Platform](https://docs.openhands.dev). The 6-layer context architecture is inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-in-house-data-agent/). The platform integration extends OpenHands's coding agent with domain-specific skills for data work.
 
 ## Further Reading
 

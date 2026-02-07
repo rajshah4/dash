@@ -2,21 +2,23 @@
 
 ## Project Overview
 
-Dash is a self-learning data agent that delivers **insights, not just SQL results**. Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk), it uses custom tools for SQL execution and schema introspection, grounded in 6 layers of context. Inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-in-house-data-agent/).
+Dash is a self-learning data agent that delivers **insights, not just SQL results**. Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk) and deployable on the [OpenHands Platform](https://docs.openhands.dev). It uses 6 layers of context (inspired by [OpenAI's in-house data agent](https://openai.com/index/inside-our-in-house-data-agent/)) to ground SQL generation and provide meaningful answers.
+
+Two modes: **SDK mode** for lightweight validation and testing; **Platform mode** for the full OpenHands experience (terminal, file editor, sandbox, psql).
 
 ## Structure
 
 ```
 dash/
 ├── agents.py             # Agent definition (SDK mode)
-├── platform.py           # Platform mode launcher
+├── platform.py           # Platform mode launcher (opens browser)
 ├── mcp_config.example.json # Example MCP server configuration
 ├── paths.py              # Path constants
 ├── prompts/
 │   ├── system_prompt.j2          # SDK mode system prompt
 │   ├── security_policy.j2        # Security policy
 │   └── security_risk_assessment.j2 # Risk assessment template
-├── knowledge/            # Knowledge files (tables, queries, business rules, learnings)
+├── knowledge/            # Knowledge files (both modes)
 │   ├── tables/           # Table metadata JSON files (Layer 1)
 │   ├── business/         # Business rules and metrics (Layer 2)
 │   ├── queries/          # Validated SQL queries (Layer 3)
@@ -45,6 +47,11 @@ app/
 ├── static/index.html     # Built-in chat UI
 └── config.yaml           # Configuration
 
+skills/                   # Platform mode — auto-loaded into OpenHands agent
+├── dash-agent.md         # Agent identity, DB connection, workflow
+├── dash-schema.md        # Table metadata, data quality gotchas, SQL rules
+└── dash-sql-patterns.md  # Validated SQL templates, business rules
+
 db/
 ├── session.py            # SQLAlchemy engine factory
 └── url.py                # Database URL builder
@@ -66,9 +73,10 @@ python -m dash --confirm                        # Enable confirmation for risky 
 python -m dash.agents                           # Test mode (runs sample query)
 python -m app.main                              # API server + chat UI → http://localhost:7777
 
-# Platform Mode (full OpenHands with bash, file editor, browser)
+# Platform Mode (full OpenHands with terminal, file editor, sandbox)
+docker compose -f compose.platform.yaml build dash-sandbox   # Once: custom image with psql
 docker compose -f compose.platform.yaml up -d   # Start OpenHands + DB
-open http://localhost:3000                        # OpenHands web UI
+open http://localhost:3000                        # Configure LLM in Settings, then chat
 
 # Data & Knowledge
 python -m dash.scripts.load_data                # Load F1 sample data
@@ -89,18 +97,17 @@ python -m dash.evals.run_evals -g -r -v         # All modes combined
 
 Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk):
 
-| Component | OpenHands SDK Class | Role |
-|-----------|-------------------|------|
-| Agent | `Agent` | Reasoning loop with LLM + tools |
-| LLM | `LLM` | Model integration (any LiteLLM provider) |
-| Tools | `ToolDefinition` | Custom SQL, introspect, save, learn tools |
-| MCP | `mcp_config` | Connect to external MCP tool servers |
-| Context | `AgentContext` + `Skill` | Instructions & knowledge injection |
-| Condenser | `LLMSummarizingCondenser` | Compress long conversations |
-| Security | `ConfirmRisky` | Confirmation for risky actions |
-| Persistence | `persistence_dir` | Save/resume conversations to disk |
-| Conversation | `Conversation` | State & lifecycle management |
-| Platform | `.openhands_instructions` | Injects Dash context into OpenHands's coding agent |
+| Component | SDK Mode | Platform Mode |
+|-----------|----------|---------------|
+| Agent | Custom `Agent` with data-agent prompt | OpenHands CodeAct agent + Dash skills |
+| LLM | `LLM` (any LiteLLM provider) | Configured via OpenHands Settings UI |
+| Tools | `ToolDefinition` (run_sql, introspect, save_query, save_learning) | Built-in bash (psql), file_editor, browser |
+| Context | `AgentContext` + `Skill` → prompt injection | `skills/*.md` mounted into `/app/skills/` |
+| MCP | `mcp_config` → external tool servers | Same (optional) |
+| Condenser | `LLMSummarizingCondenser` | Handled by platform |
+| Security | `ConfirmRisky` confirmation policy | Docker sandbox isolation |
+| Persistence | `persistence_dir` on disk | Built into OpenHands server |
+| Sandbox | N/A (runs locally) | Docker-isolated execution |
 
 ### Custom Tools (registered via `register_tool`)
 
@@ -144,18 +151,18 @@ Conversations are saved to `.dash_sessions/` by default. In the CLI, each sessio
 
 ## The Six Layers of Context
 
-| Layer | Source | Code |
-|-------|--------|------|
-| 1. Table Usage | `dash/knowledge/tables/*.json` | `dash/context/semantic_model.py` |
-| 2. Human Annotations | `dash/knowledge/business/*.json` | `dash/context/business_rules.py` |
-| 3. Query Patterns | `dash/knowledge/queries/*.sql` | `dash/context/query_patterns.py` |
-| 4. Institutional Knowledge | MCP connectors (optional) | `dash/mcp_config.json` + SDK `mcp_config` |
-| 5. Learnings | `dash/knowledge/learnings/*.json` + `save_learning` tool | `dash/context/learnings.py` |
-| 6. Runtime Context | `introspect_schema` tool | `dash/tools/introspect.py` |
+| Layer | SDK Mode | Platform Mode |
+|-------|----------|---------------|
+| 1. Table Usage | `knowledge/tables/*.json` → `context/semantic_model.py` | `skills/dash-schema.md` |
+| 2. Human Annotations | `knowledge/business/*.json` → `context/business_rules.py` | `skills/dash-sql-patterns.md` |
+| 3. Query Patterns | `knowledge/queries/*.sql` → `context/query_patterns.py` | `skills/dash-sql-patterns.md` |
+| 4. Institutional Knowledge | MCP connectors (optional) | MCP or `psql` + Python |
+| 5. Learnings | `save_learning` tool → `knowledge/learnings/*.json` | Agent saves to `knowledge/` via file editor |
+| 6. Runtime Context | `introspect_schema` tool | `psql -c "\d table_name"` |
 
-Layers 1-3 and 5 are loaded at startup into the agent's `Skill` context.
-Layer 4 is provided at runtime via MCP tool servers.
-Layer 6 is provided at runtime via the `introspect_schema` tool.
+**SDK Mode**: Layers 1-3 and 5 loaded at startup into agent's `Skill` context. Layer 4 via MCP. Layer 6 via tool.
+
+**Platform Mode**: Layers 1-3 delivered via skill files auto-injected into every conversation. Layers 4-6 via terminal tools.
 
 ## Data Quality (F1 Dataset)
 

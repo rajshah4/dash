@@ -61,6 +61,10 @@ Thumbs.db
 tmp
 .claude
 .dash_sessions/
+project/          # created by OpenHands sandbox inside workspace mount
+bash_events/      # OpenHands runtime artifacts
+conversations/    # OpenHands runtime artifacts
+env.txt           # OpenHands runtime artifacts
 
 # Optional: local PyPI creds (uncomment if you ever create it)
 # .pypirc

@@ -12,9 +12,21 @@ Your goal: make the user look like they've been working with this data for years
 - **Password:** `ai`
 - **Database:** `ai`
 - **Type:** PostgreSQL
+- **Connection URL:** `postgresql://ai:ai@host.docker.internal:5432/ai`
 
-Connect with: `psql -h host.docker.internal -U ai -d ai`
-Or with Python: `postgresql://ai:ai@host.docker.internal:5432/ai`
+### Running SQL queries
+`psql` is pre-installed in this sandbox.
+```bash
+psql -h host.docker.internal -U ai -d ai -c "SELECT * FROM drivers_championship LIMIT 5"
+```
+
+Set `PGPASSWORD` to avoid password prompts:
+```bash
+export PGPASSWORD=ai
+psql -h host.docker.internal -U ai -d ai -c "SELECT ..."
+```
+
+For complex analysis, you can also use Python with `pip install psycopg2-binary`.
 
 ## Available Tables
 
@@ -47,15 +59,15 @@ Or with Python: `postgresql://ai:ai@host.docker.internal:5432/ai`
 - **Never SELECT *** — always specify the columns you need
 - **ORDER BY** for any top-N or ranking queries
 - **Read-only only** — no DROP, DELETE, UPDATE, INSERT, ALTER, CREATE
-- Use **`introspect_schema`** (via `psql \d table_name`) when unsure about column types
+- Introspect schema when unsure about column types (see Python example below)
 
 ## Workflow
 
-1. **Check knowledge first** — browse `dash/knowledge/` for existing patterns and business rules
-2. **Introspect if unsure** — use `psql \d table_name` to verify column types
-3. **Write SQL** — use `psql -c "SELECT ..."` or Python for complex analysis
-4. **Provide insights** — contextualize numbers, compare to benchmarks, highlight surprises
-5. **Save discoveries** — if you find a schema quirk or useful pattern, save it to the knowledge files
+1. **Check knowledge first** — browse `/workspace/knowledge/` for existing patterns and business rules
+3. **Introspect if unsure** — run `psql -h host.docker.internal -U ai -d ai -c "\d table_name"` to check column types
+4. **Write SQL** — use `psql` for queries, Python for complex analysis
+5. **Provide insights** — contextualize numbers, compare to benchmarks, highlight surprises
+6. **Save discoveries** — if you find a schema quirk or useful pattern, save it to `/workspace/knowledge/`
 
 ## Insights, Not Just Data
 
@@ -66,12 +78,14 @@ Or with Python: `postgresql://ai:ai@host.docker.internal:5432/ai`
 
 ## Knowledge Directory
 
-The `dash/knowledge/` directory contains curated context:
+**Important:** Project files are at `/workspace/` (not `/workspace/project/`).
 
-- `dash/knowledge/tables/*.json` — table metadata with column descriptions and data quality notes
-- `dash/knowledge/business/metrics.json` — business metric definitions and common gotchas
-- `dash/knowledge/queries/common_queries.sql` — validated SQL patterns that are known to work
-- `dash/knowledge/learnings/*.json` — discoveries from previous sessions (schema quirks, patterns)
+The `/workspace/knowledge/` directory contains curated context:
+
+- `/workspace/knowledge/tables/*.json` — table metadata with column descriptions and data quality notes
+- `/workspace/knowledge/business/metrics.json` — business metric definitions and common gotchas
+- `/workspace/knowledge/queries/common_queries.sql` — validated SQL patterns that are known to work
+- `/workspace/knowledge/learnings/*.json` — discoveries from previous sessions (schema quirks, patterns)
 
 Browse these files when you need context about the data.
 
@@ -139,7 +153,7 @@ LIMIT 50
 
 You have a full toolset beyond SQL:
 
-- **Terminal (`psql`)** — run `psql -h host.docker.internal -U ai -d ai -c "SELECT ..."` for formatted output
+- **Terminal (`psql`)** — run `psql -h host.docker.internal -U ai -d ai -c "SELECT ..."` for queries
 - **Python scripts** — write analysis scripts with pandas, matplotlib, scipy for deeper analysis
-- **File editor** — browse/edit knowledge files, save reports, curate SQL patterns
-- **Install packages** — `pip install pandas matplotlib` if needed
+- **File editor** — browse/edit knowledge files at `/workspace/knowledge/`, save reports
+- **Install packages** — `apt-get install` for system packages, `pip install` for Python packages

@@ -31,6 +31,14 @@ services:
       POSTGRES_PASSWORD: ${DB_PASS:-ai}
       POSTGRES_DB: ${DB_DATABASE:-ai}
 
+  # Custom sandbox image — build with: docker compose -f compose.platform.yaml build dash-sandbox
+  dash-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: dash-sandbox:latest
+    profiles: ["build"]   # only used for building, not running
+
   openhands:
     image: docker.openhands.dev/openhands/openhands:latest
     container_name: openhands-dash
@@ -42,15 +50,20 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Persistent state (conversations, settings)
       - openhands-state:/.openhands
+      # Dash skills — auto-loaded into every conversation's agent context
+      - ./skills/dash-agent.md:/app/skills/dash-agent.md:ro
+      - ./skills/dash-schema.md:/app/skills/dash-schema.md:ro
+      - ./skills/dash-sql-patterns.md:/app/skills/dash-sql-patterns.md:ro
     environment:
-      # Workspace — OpenHands mounts this host directory into sandbox containers
-      WORKSPACE_BASE: ${PWD:-.}
-      # LLM configuration (configure once here, not per-conversation in UI)
-      LLM_API_KEY: ${LLM_API_KEY:-${OPENAI_API_KEY}}
-      LLM_MODEL: ${LLM_MODEL:-openai/gpt-4.1}
-      # NOTE: Do NOT set DB_* env vars here — OpenHands interprets them as
-      # its own database config. The agent learns the DB connection info from
-      # .openhands_instructions in the workspace instead.
+      # Use our custom sandbox image with psql pre-installed
+      AGENT_SERVER_IMAGE_REPOSITORY: dash-sandbox
+      AGENT_SERVER_IMAGE_TAG: latest
+      # Mount the Dash workspace into every sandbox container
+      # Files available at /workspace/ — agent reads .openhands_instructions
+      SANDBOX_VOLUMES: "${PWD:-.}:/workspace:rw"
+      # NOTE: Do NOT set LLM_API_KEY or DB_* env vars here — they conflict
+      # with the server's internal LiteLLM proxy. Configure the LLM via
+      # the Settings page in the UI (http://localhost:3000).
     extra_hosts:
       # So sandbox containers can reach the database via host.docker.internal
       - "host.docker.internal:host-gateway"

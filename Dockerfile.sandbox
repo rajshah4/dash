@@ -1,0 +1,9 @@
+# Extends the OpenHands agent-server with postgresql-client for Dash
+ARG BASE_IMAGE=ghcr.io/openhands/agent-server:10fff69-python
+FROM ${BASE_IMAGE}
+
+USER root
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends postgresql-client && \
+    rm -rf /var/lib/apt/lists/*
+USER openhands
