@@ -8,7 +8,8 @@ Dash is a self-learning data agent that delivers **insights, not just SQL result
 
 ```
 dash/
-├── agents.py             # Dash agent (LLM, tools, condenser, security)
+├── agents.py             # Dash agent (LLM, tools, MCP, condenser, security)
+├── mcp_config.example.json # Example MCP server configuration
 ├── paths.py              # Path constants
 ├── knowledge/            # Knowledge files (tables, queries, business rules)
 │   ├── tables/           # Table metadata JSON files
@@ -76,6 +77,7 @@ Built on the [OpenHands Software Agent SDK](https://docs.openhands.dev/sdk):
 | Agent | `Agent` | Reasoning loop with LLM + tools |
 | LLM | `LLM` | Model integration (any LiteLLM provider) |
 | Tools | `ToolDefinition` | Custom SQL, introspect, save tools |
+| MCP | `mcp_config` | Connect to external MCP tool servers |
 | Context | `AgentContext` + `Skill` | Instructions & knowledge injection |
 | Condenser | `LLMSummarizingCondenser` | Compress long conversations |
 | Security | `ConfirmRisky` | Confirmation for risky actions |
@@ -129,6 +131,8 @@ Conversations are saved to `.dash_sessions/` by default. In the CLI, each sessio
 | `LLM_MODEL` | No | Model name (default: `openai/gpt-4.1`) |
 | `LLM_BASE_URL` | No | Custom API base URL |
 | `LMNR_PROJECT_API_KEY` | No | Laminar API key for tracing (auto-enabled) |
+| `DASH_MCP_CONFIG` | No | MCP config as inline JSON string |
+| `DASH_MCP_CONFIG_FILE` | No | Path to MCP config JSON file |
 | `DASH_PERSISTENCE_DIR` | No | Custom persistence directory (API) |
 | `DASH_ENABLE_CONFIRMATION` | No | Enable security confirmation (API) |
 | `DASH_CHAT_TIMEOUT` | No | Request timeout in seconds (default: 300) |

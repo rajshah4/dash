@@ -6,18 +6,21 @@ Defines the Dash data agent using the OpenHands SDK.
 
 Features:
 - Custom SQL tools (run_sql, introspect_schema, save_validated_query)
+- MCP (Model Context Protocol) for connecting to external tool servers
 - LLM-summarizing condenser for long conversations
 - Security confirmation policy for risky actions
 
 Test: python -m dash.agents
 """
 
+import json
 from os import getenv
 from pathlib import Path
 
 from openhands.sdk import Agent, AgentContext, LLM, Tool, register_tool
 from openhands.sdk.context.condenser.llm_summarizing_condenser import LLMSummarizingCondenser
 from openhands.sdk.context.skills.skill import Skill
+from openhands.sdk.logger import get_logger
 from openhands.sdk.security.confirmation_policy import ConfirmRisky
 from openhands.sdk.security.risk import SecurityRisk
 
@@ -28,6 +31,8 @@ from dash.tools.introspect import IntrospectSchemaTool
 from dash.tools.save_query import SaveValidatedQueryTool
 from dash.tools.sql import RunSQLTool
 from db import db_url
+
+logger = get_logger(__name__)
 
 # Absolute path to our custom system prompt (replaces the SDK's coding-agent prompt)
 PROMPT_DIR = Path(__file__).parent / "prompts"
@@ -104,6 +109,58 @@ dash_context = AgentContext(
 )
 
 # ============================================================================
+# MCP Configuration (optional)
+# ============================================================================
+# Connect to external MCP tool servers. Configure via:
+#   1. DASH_MCP_CONFIG env var (JSON string)
+#   2. DASH_MCP_CONFIG_FILE env var (path to JSON file)
+#   3. Default: dash/mcp_config.json (if it exists)
+#
+# Format (standard MCP config):
+#   {
+#     "mcpServers": {
+#       "server-name": {
+#         "command": "uvx",
+#         "args": ["mcp-server-name"]
+#       }
+#     }
+#   }
+
+
+def _load_mcp_config() -> dict | None:
+    """Load MCP configuration from env var, file, or default path."""
+    # 1. Inline JSON from env var
+    raw = getenv("DASH_MCP_CONFIG")
+    if raw:
+        try:
+            config = json.loads(raw)
+            logger.info("Loaded MCP config from DASH_MCP_CONFIG env var")
+            return config
+        except json.JSONDecodeError:
+            logger.warning("DASH_MCP_CONFIG is not valid JSON, ignoring")
+
+    # 2. Path from env var
+    config_path_str = getenv("DASH_MCP_CONFIG_FILE")
+    if config_path_str:
+        config_path = Path(config_path_str)
+    else:
+        # 3. Default path
+        config_path = Path(__file__).parent / "mcp_config.json"
+
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+            logger.info("Loaded MCP config from %s", config_path)
+            return config
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to load MCP config from %s: %s", config_path, e)
+
+    return None
+
+
+mcp_config = _load_mcp_config()
+
+# ============================================================================
 # Create Agent
 # ============================================================================
 
@@ -117,6 +174,7 @@ dash = Agent(
     agent_context=dash_context,
     condenser=condenser,
     system_prompt_filename=SYSTEM_PROMPT_FILE,
+    mcp_config=mcp_config or {},
     include_default_tools=[],
 )
 
