@@ -2,7 +2,37 @@
   "mcpServers": {
     "fetch": {
       "command": "uvx",
-      "args": ["mcp-server-fetch"]
+      "args": ["mcp-server-fetch"],
+      "_comment": "General HTTP fetch — useful for loading docs, APIs, or CSV data from URLs"
+    },
+    "postgres": {
+      "command": "uvx",
+      "args": ["mcp-server-postgres"],
+      "env": {
+        "POSTGRES_CONNECTION_STRING": "postgresql://user:pass@host:5432/dbname"
+      },
+      "_comment": "Direct database access via MCP — alternative to custom SQL tools"
+    },
+    "filesystem": {
+      "command": "uvx",
+      "args": ["mcp-server-filesystem", "/path/to/data"],
+      "_comment": "Read/write access to local data directories (CSVs, reports, exports)"
+    },
+    "github": {
+      "command": "uvx",
+      "args": ["mcp-server-github"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_..."
+      },
+      "_comment": "Access GitHub repos, issues, PRs — useful for data pipeline code review"
+    },
+    "slack": {
+      "command": "uvx",
+      "args": ["mcp-server-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-..."
+      },
+      "_comment": "Send query results or alerts to Slack channels"
     }
   }
 }

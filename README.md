@@ -283,6 +283,82 @@ python -m dash.scripts.check_schema          # Detect knowledge vs DB mismatches
 python -m dash.scripts.check_schema --fix    # Auto-generate missing knowledge files
 ```
 
+## OpenHands Cloud
+
+Dash works with [OpenHands Cloud](https://docs.openhands.dev/openhands/usage/cloud/cloud-ui) for managed deployments — no Docker, no self-hosting.
+
+### Setup
+
+1. **Create an API key** — Go to [Settings → API Keys](https://docs.openhands.dev/openhands/usage/settings/api-keys-settings) and generate an OpenHands API Key.
+2. **Configure your LLM** — In [Settings → LLM](https://docs.openhands.dev/openhands/usage/settings/llm-settings), choose a provider and enter your API key. OpenHands supports bring-your-own-key (BYOK) for OpenAI, Anthropic, Azure, and others, or you can use the built-in OpenHands LLM key.
+3. **Connect your repo** — Link your GitHub/GitLab/Bitbucket repository. Dash's `skills/` directory and knowledge files will be available to the agent automatically.
+4. **Store secrets** — Use the [Secrets tab](https://docs.openhands.dev/openhands/usage/cloud/cloud-ui) to store `DB_HOST`, `DB_PASS`, and other credentials instead of `.env` files.
+5. **Set a budget** — Use the per-conversation budget limit for cost governance.
+
+### Programmatic Access (Cloud API)
+
+Use the [Cloud API](https://docs.openhands.dev/openhands/usage/cloud/cloud-api) to run data tasks in CI/CD pipelines or scheduled jobs:
+
+```sh
+# Run a data quality audit via the API
+OPENHANDS_HOST=https://app.openhands.ai \
+OPENHANDS_API_KEY=oh-... \
+python scripts/cloud_api_demo.py "Run a data quality audit on all tables"
+```
+
+See [`scripts/cloud_api_demo.py`](scripts/cloud_api_demo.py) for a full example that creates a conversation, sends a message, and polls for results.
+
+### MCP for Enterprise Data Sources
+
+The [Model Context Protocol](https://docs.openhands.dev/overview/model-context-protocol) (MCP) connects Dash to external data systems — data catalogs, BI tools, Slack, GitHub, and more. MCP works across SDK mode, self-hosted platform, and Cloud.
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "uvx",
+      "args": ["mcp-server-postgres"],
+      "env": { "POSTGRES_CONNECTION_STRING": "postgresql://..." }
+    },
+    "slack": {
+      "command": "uvx",
+      "args": ["mcp-server-slack"],
+      "env": { "SLACK_BOT_TOKEN": "xoxb-..." }
+    }
+  }
+}
+```
+
+See [`dash/mcp_config.example.json`](dash/mcp_config.example.json) for more examples (filesystem, GitHub, fetch).
+
+### Enterprise Integrations
+
+OpenHands Cloud also supports:
+- **Repository integrations** — GitHub, GitLab, Bitbucket (auto-load skills from your repo)
+- **Slack app** — Chat with your data agent from Slack
+- **Budget limits** — Per-conversation cost caps for governance
+
+## Custom Sandbox
+
+Dash uses a [custom Docker sandbox](https://docs.openhands.dev/usage/runtimes/docker) with `postgresql-client` pre-installed so the agent can run `psql` commands directly. This is the official OpenHands sandbox model — your repo is mounted into the container and the agent operates in an isolated environment.
+
+To customize the sandbox (e.g., add Python data science libraries):
+
+```dockerfile
+# Dockerfile.sandbox
+FROM docker.openhands.dev/openhands/openhands-agent-server:latest
+RUN apt-get update && apt-get install -y postgresql-client python3-pandas
+```
+
+Build and use it:
+
+```sh
+docker compose -f compose.platform.yaml build dash-sandbox
+docker compose -f compose.platform.yaml up -d
+```
+
+The custom image is referenced in `compose.platform.yaml` via `AGENT_SERVER_IMAGE_REPOSITORY` and `AGENT_SERVER_IMAGE_TAG`.
+
 ## Environment Variables
 
 | Variable | Required | Description |
