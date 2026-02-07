@@ -170,6 +170,16 @@ Conversations are saved to `.dash_sessions/` by default. In the CLI, each sessio
 
 **Platform Mode**: Layers 1-3 delivered via skill files auto-injected into every conversation. Layers 4-6 via terminal tools.
 
+## Documentation
+
+Detailed documentation lives in `docs/`:
+
+- `docs/sdk-mode.md` — SDK mode setup and workflow
+- `docs/platform-mode.md` — Platform mode, skills injection, custom sandbox
+- `docs/knowledge.md` — Six layers of context, self-learning loop, knowledge examples
+- `docs/enterprise.md` — OpenHands Cloud, Cloud API, MCP, enterprise integrations
+- `docs/evals.md` — Evaluation harness, test case format, grading options
+
 ## Data Quality (F1 Dataset)
 
 | Issue | Solution |
