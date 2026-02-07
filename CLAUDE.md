@@ -45,7 +45,7 @@ dash/
 app/
 ├── main.py               # API entry point (FastAPI) + chat UI
 ├── static/index.html     # Built-in chat UI
-└── config.yaml           # Configuration
+└── static/index.html     # SDK-mode chat UI
 
 skills/                   # Platform mode — auto-loaded into OpenHands agent
 ├── dash-agent.md         # Agent identity, DB connection, workflow
